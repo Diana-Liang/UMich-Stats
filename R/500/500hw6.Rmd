@@ -1,0 +1,179 @@
+---
+title: 'Stats 500: HW #6'
+author: "Diana Liang"
+date: "12/5/2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(leaps)
+library(MASS)
+library(glmnet)
+library(faraway)
+library(dplyr)
+library(tidyr)
+data(fat)
+
+# Set up data
+index <- seq(10, 250, by = 10)
+train <- fat[-index, -c(1,3,8)]
+test <- fat[index, -c(1,3,8)]
+rmse <- function(x,y) sqrt(mean((x-y)^2))
+```
+
+# Part 1: Model Performance of **fat** data
+
+## 1. Model A: Linear regression with all predictors
+
+Here is the summary for the basic linear regression:
+
+```{r, echo = FALSE}
+m_a <- lm(siri~., train)
+a_rmse <- rmse(predict(m_a, test), test$siri)
+
+summary(m_a)
+```
+
+The RMSE for model A was `r round(a_rmse, 3)`. This value will be used as a baseline to compare to that of other regression models.
+
+## 2. Model B: Linear regression with Mallows Cp
+
+First, the predictor variables need to be chosen by Mallows Cp.
+
+Here are the possible combinations:
+
+```{r, echo = FALSE}
+b <- regsubsets(siri~., train)
+summary(b)
+
+cp <- which.min(summary(b)$cp)
+plot(2:9, summary(b)$cp, main = "Cp  Plot for fat Training Data", xlab = "No. Parameters", ylab = "Cp")
+abline(0,1)
+```
+
+The Mallows Cp method suggests `r cp` variables: age, weight, neck, abdom, thigh, forearm, and wrist. Since this selection has a Cp below the _p+1_ line, as shown in the plot, that selection will be used as the predictor variables for linear regression.
+
+Here is that summary:
+
+```{r, echo = FALSE}
+m_b <- lm(siri~age+weight+neck+abdom+thigh+forearm+wrist, train)
+b_rmse <- rmse(predict(m_b, test), test$siri)
+
+summary(m_b)
+```
+
+The RMSE for model B was `r round(b_rmse, 3)`, which is incredibly similar to model A's `r round(a_rmse, 3)`. So this new model performs just as well as the regular linear regression model.
+
+## 3. Model C: Linear regression with Adjusted $R^2$
+
+The predictor variables need to be chosen by adjusted $R^2$. The same combinations will be used as for the Mallows Cp.
+
+```{r, echo = FALSE}
+plot(2:9, summary(b)$adjr2, main = "Adjusted R^2 Plot for fat Training Data", xlab = "No. of Parameters", ylab = "Adjusted R^2")
+
+rsq <- which.max(summary(b)$adjr2)
+```
+
+As shown in the above plot, adjusted $R^2$ suggests `r rsq` variables: age, weight, neck, abdom, hip, thigh, forearm, and wrist. These will be used as predictor variables in a linear regression model.
+
+```{r, echo = FALSE}
+m_c <- lm(siri~age+weight+neck+abdom+hip+thigh+forearm+wrist, train)
+c_rmse <- rmse(predict(m_c, test), test$siri)
+
+summary(m_c)
+```
+
+The RMSE for model C was `r round(c_rmse, 3)`, which is again very similar to model A's `r round(a_rmse, 3)`. So again this new model performs just as well as the last two.
+
+## 4. Model D: Ridge Regression
+
+Ridge regression requires standardized predictors and a $\lambda$ for the penalty term.
+```{r, echo = FALSE}
+train_s <- data.frame(siri = train$siri,
+                      scale(train[, 2:15]))
+
+diagon <- diag(t(as.matrix(train_s[2:15])) %*% as.matrix(train_s[2:15]))
+
+train_pred <- as.matrix(train_s[2:15])
+train_resp <- as.matrix(train_s$siri)
+
+lmin <- cv.glmnet(x=train_pred,y=train_resp, nfolds = 10, type.measure="mse", family="gaussian", alpha = 0)
+
+lmda <- lmin$lambda.min
+```
+CV is the most common tool to determine $\lambda$, and it returned $\lambda_{min}$ = `r lmda`. Now this parameter can used for the ridge regression model.
+
+Here is a list of the $\beta$ estimates:
+
+```{r, echo = FALSE}
+m_d <- glmnet(train_pred, train_resp, alpha = 0, lambda = lmda)
+
+m_d$beta
+
+d_rmse <- rmse(predict(m_d, s = lmda, newx = as.matrix(scale(test[2:15]))), as.matrix(test$siri))
+```
+
+The RMSE for model D was `r round(d_rmse, 3)`, which is smaller than all the previous RMSE's: `r round(a_rmse, 3)` for model A, `r round(b_rmse, 3)` for model B, and `r round(c_rmse, 3)` for model C.
+
+# Part 2: Binomial Regression Model for **pima**
+
+All values set at 0 are removed before modeling, so here is the summary for that binomial model:
+
+```{r, echo = FALSE}
+data(pima)
+
+final <- pima %>%
+  filter(pregnant > 0, glucose > 0, diastolic > 0, bmi > 0, diabetes > 0, age > 0)
+
+m <- glm(cbind(test, 1-test)~pregnant + glucose+ diastolic + bmi + diabetes + age,
+         family = binomial, data = final)
+summary(m)
+
+```
+
+## 1. Deviance
+
+Deviance cannot be used on binary data, or when the number of parameters is 1. In this case, there is more than one parameter, so the data is not binary. Deviance, then, can be used to measure goodness-of-fit.
+
+## 2. Odds Ratio for BMI
+
+The summary of **bmi** will provide a quick view of the quartiles:
+```{r, echo = FALSE}
+
+summary(final$bmi)
+
+bmi_or <- exp(quantile(final$bmi)[4]*m$coefficients[5]) / exp(quantile(final$bmi)[2]*m$coefficients[5])
+```
+The ratio of odds for third quartile of **bmi** - first quartile of **bmi** is `r round(bmi_or, 3)`, which is the ratio of odds ratio of the third quartile BMI over the odds ratio of the first quartile BMI.
+
+## 3. Confound Controlling for Diastolic Blood Pressure
+
+Here is the model summary with **diastolic** as a predictor varible:
+```{r, echo = FALSE}
+m_bp <- glm(cbind(test, 1-test)~diastolic,
+         family = binomial, data = final)
+summary(m_bp)
+```
+
+The coefficient is positive in this model but is negative in the original model. While this may seem like a contradiction, this new model does not control for other predictor variables that may be confounding the relationship between **test** and **diastolic**. Having more predictor variables lessens confounding by controlling for those predictor variables, providing a more accurate relationship.
+
+## 4. Predict Probability
+
+```{r, echo = FALSE}
+preg <- 1
+glu <- 100
+dias <- 70
+bmI <- 25 
+diab <- 0.6
+agE <- 30
+coef <- m$coefficients
+```
+The probability can be found through the predicted odds ratio. The predicted odds ratio is the exponent of the predicted value. All of which is shown here:
+
+```{r, echo = TRUE}
+pred <- exp(coef[1]+ coef[2]*preg +coef[3]*glu + coef[4]*dias + coef[5]*bmI + coef[6]*diab + coef[7]*agE)
+
+prob <- pred/(1+pred)
+```
+The probabiliy of testing positive (given **pregnant** = `r preg`, **glucose** = `r glu`, **diastolic** = `r dias`, **bmi** = `r bmI`, **diabetes** = `r diab`, and **age** = `r agE`) is `r round(prob, 3)`.

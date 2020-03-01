@@ -1,0 +1,376 @@
+---
+title: "Stats 506: PS3 Resampling Methods"
+author: "Diana Liang"
+date: "11/8/2019"
+output: word_document
+---
+Motivation
+
+Finding the confidence interval is often difficult in real life analyses of complex problems when data is sparse or unavailable. In model simulation, finding a confidence interval can be just as difficult. Different resampling methods have been developed to solve this problem, and four of them will be compared below: Jackknife, percentile method, basic bootstrap, and normal approximation.
+
+The simulations in this study will be based on finding ratio of means, as in the mean(x)/mean(y). The first part will not include Monte Carlo replicates while the second part will.
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(datasets)
+data("ToothGrowth")
+
+```
+
+
+Part 1: Confidence Intervals for No Monte Carlo Replicates
+```{r, echo = FALSE}
+## PART A: Jackknife for conf int----------------------------
+## Returns confidence interval for ratio of E(x)/E(y)
+mean_ratio_jk <- function(x, y, alpha){
+  ## input: x = vector of x, 
+  ##        y = vector of y, and 
+  ##        alpha = significance level
+  ## output: data.frame of confidence interval for E(x)/E(y)
+  
+  l <- length(x) + length(y)
+  
+  ## Find E(x)/E(y) when one of x or y is removed
+  # when one of x removed
+  x_theta_hat <- ( (-1/(length(x)-1))*(x-sum(x)) ) / mean(y)
+  # when one of y removed
+  y_theta_hat <- mean(x) / ( (-1/(length(y)-1))*(y-sum(y)) )
+  # combine together
+  theta_hat <- c(x_theta_hat, y_theta_hat)
+  
+  ## Calculate point estimate and sigma
+  theta_bar <- mean(x)/mean(y)
+  sigma <- ((l-1)/l)*(theta_hat - theta_bar)^2
+  sigma <- sqrt( sum(sigma) )
+  
+  # Create conf int
+  final <- data.frame("type" = "ci_jk",
+                      "lwr" = theta_bar - qnorm(1-(alpha/2))*sigma,
+                      "point_est" = theta_bar,
+                      "upr" = theta_bar + qnorm(1-(alpha/2))*sigma)
+  return( final )
+}
+
+
+## PART B: 3 methods for conf int------------------------------
+
+## **Requires dpylr**
+## Returns 3 confidence intervals for ratio of E(x)/E(y)
+mean_ratio_bs <- function(x, y, alpha, B){
+  ## input: x = vector of x, y = vector of y,
+  ##        alpha = significance level,
+  ##        B = # of bootstrap replicates
+  ## output: data.frame of 3 confidence intervals for E(x)/E(y):
+  ##          (i) percentile method
+  ##          (ii) basic bootstrap
+  ##          (iii) normal approx with bootstrap st err
+  
+  # set up values
+  n_x = length(x)
+  n_y = length(y)
+  
+  # Create and define x and y bootstraps
+  x_m <- sample(x, n_x*B, replace = TRUE)
+  dim(x_m) <- c(n_x,B)
+  
+  y_m <- sample(y, n_y*B, replace = TRUE)
+  dim(y_m) <- c(n_y,B)
+  
+  # Find theta
+  theta <-c( matrix(colMeans(x_m))/
+               matrix(colMeans(y_m)) )
+  theta_a <- unname(quantile(theta, (alpha/2)))
+  theta_1_a <- unname(quantile(theta, 1-(alpha/2)))
+  stdev <- sd(theta)
+  
+  point_est <- mean(x)/mean(y)
+  
+  # Find conf int for percentile method
+  ci_pct <- data.frame("type" = "ci_pct",
+                   "lwr" = theta_a,
+                   "point_est" = point_est,
+                   "upr" = theta_1_a)
+  
+  # Find conf int for basic bootstrap
+  ci_bbs <- data.frame("type" = "ci_bbs",
+                       "lwr" = 2*point_est - theta_1_a,
+                       "point_est" = point_est,
+                       "upr" = 2*point_est - theta_a)
+  
+  # Find conf int for norm approx with bs st err
+  ci_norm <- data.frame("type" = "ci_norm",
+                        "lwr" = point_est - qnorm(1-(alpha/2))*stdev,
+                        "point_est" = point_est,
+                        "upr" = point_est + qnorm(1-(alpha/2))*stdev)
+  
+  # return all 3 conf int
+  ci_final <- rbind.data.frame(ci_pct, ci_bbs, ci_norm)
+  return( ci_final )
+}
+```
+
+
+The below table uses the ToothGrowth data to find the ratios of mean odontoblast length between the "OJ" supplement and the "VC" supplement.
+```{r, include= FALSE}
+# create table of dose and len with OJ supp
+OJ_df <- ToothGrowth %>%
+  filter(supp == "OJ") %>%
+  select(dose, len) %>%
+  group_by(dose) %>%
+  arrange(dose)
+
+# create table of dose and len with VC supp
+VC_df <- ToothGrowth %>%
+  filter(supp == "VC") %>%
+  select(dose, len) %>%
+  group_by(dose) %>%
+  arrange(dose)
+
+## Create function to calculate all 4 conf int
+mean_ratio_all <- function(x, y, alpha, B) {
+  ## input: vector x, vector y, and significance level a
+  ## output: data.frame of conf int for all 4 types
+  final <- bind_rows(mean_ratio_jk(x, y, alpha),
+                     mean_ratio_bs(x, y, alpha, B))
+  return(final)
+}
+
+# create table dose, len_OJ, len_VC
+df <- bind_cols(OJ_df,VC_df) %>%
+  ungroup() %>%
+  transmute("dose" = dose,
+            "len_OJ" = len,
+            "len_VC" = len1) %>%
+  group_by(dose) %>%
+  do(mean_ratio_all(.$len_OJ, .$len_VC, 0.05, 1E6))
+
+# formate table to make it look nice
+table <- df %>%
+  group_by(dose, type) %>%
+  transmute("ci" = sprintf("%4.2f (%4.2f, %4.2f)", 
+                           point_est, lwr, upr)) %>%
+  ungroup() %>%
+  spread(type, ci)
+```
+```{r, echo= FALSE}
+col_names <- c("Dose", "Basic Bootstrap", "Jackknife", "Normal Approx", "Percentile")
+knitr::kable(table, col.names = col_names, caption = "Mean Ratios Based on Dosage and Method (95% Confidence Interval)")
+```
+
+
+The confidence intervals seem to be fairly similar between the different methods, either meaning that the methods verify each other's accuracy or meaning that this analysis was not enough to demonstrate the differences.
+
+
+Part 2: Confidence Intervals with Monte Carlo Replicates
+
+Monte Carlo replicates allow for more variability in the data without changing the underlying information.
+```{r, include= FALSE}
+## PART A: Monte Carlo Jackknife-------------------------------------
+
+## Returns confidence intervals for ratio of E(x)/E(y)
+mc_mean_ratio_jk <- function(x, y, alpha){
+  ## input: x = matrix of x where columns are replicates, 
+  ##        y = matrix of y where columns are replicates, and 
+  ##        alpha = significance level
+  ## output: data.frame of confidence intervals of 
+  ##         E(x)/E(y) for each replicate
+  
+  # Redefine x and y
+  t_x <- t(x); t_y <- t(y); n <- nrow(x) + nrow(y)
+  
+  ## Find the E(x)/E(y) when one of x or y removed
+  x_sums <- rowSums(t_x); y_sums <- rowSums(t_y)
+  x_means <- rowMeans(t_x); y_means <- rowMeans(t_y)
+  # Find E(x)/E(y) when one of x removed
+  x_theta_star <- (-1/(nrow(x)-1))*(t_x - x_sums)/y_means
+  # Find E(x)/E(y) when one of y removed
+  y_theta_star <- x_means/((-1/(nrow(y)-1))*(t_y-y_sums))
+  # Combine both instances
+  theta_star <- cbind(x_theta_star, y_theta_star)
+  
+  ## Calculate sigma
+  theta_bar <- x_means/y_means
+  sigma <- (((n-1)/n)*(theta_star-theta_bar)^2)
+  sigma <- sqrt(rowSums(sigma))
+  
+  ## Calculate conf int for jackknife
+  lwr <- theta_bar - qnorm(1-(alpha/2))*sigma
+  upr <- theta_bar + qnorm(1-(alpha/2))*sigma
+  
+  
+  ## Create easily manipulable data.frame of conf int.
+  final <- data.frame("mc_rep" = 1:length(lwr),
+                      "type" = "ci_jk",
+                      "lwr" = lwr,
+                      "point_est" = theta_bar,
+                      "upr" = upr)
+  return( final )
+}
+
+
+
+
+## PART B: Monte Carlo for 3 methods----------------------------------
+
+## Returns 3 confidence intervals for ratio of E(x)/E(y)
+mc_mean_ratio_bs <- function(x, y, alpha, B){
+  ## input: x = matrix of x where columns are replicates, 
+  ##        y = matrix of y where columns are replicates, 
+  ##        alpha = significance level,
+  ##        B = # of bootstrap replicates
+  ## output: data.frame of 3 confidence intervals of E(x)/E(y)
+  ##          for each replicate:
+  ##          (i) percentile method
+  ##          (ii) basic bootstrap
+  ##          (iii) normal approx with bootstrap st err
+  
+  mc_rep <- ncol(x)
+  
+  ## Calculate point estimate
+  theta_hat <- colMeans(x)/colMeans(y)
+  
+  ## Create bootstrap replicates for x
+  # Define indeces to sample x
+  index_x <- sample(1:nrow(x), nrow(x)*B*mc_rep, replace = TRUE)
+  dim(index_x) <- c(nrow(x)*B, mc_rep)
+  index_xf <- t( t(index_x) + ( nrow(x)*c(0:(mc_rep-1))) )
+  # Apply indeces to x
+  x_v <- c(x)
+  x_boot <- x_v[index_xf]
+  dim(x_boot) <- c(nrow(x), B*mc_rep)
+  
+  ## Create bootstrap replicates for y
+  # Define indeces to sample y
+  index_y <- sample(1:nrow(y), nrow(y)*B*mc_rep, replace = TRUE)
+  dim(index_y) <- c(nrow(y)*B, mc_rep)
+  index_yf <- t( t(index_y) + ( nrow(y)*c(0:(mc_rep-1))) )
+  # Apply indeces to y
+  y_v <- c(y)
+  y_boot <- y_v[index_yf]
+  dim(y_boot) <- c(nrow(y), B*mc_rep)
+  
+  ## Find E(x)/E(y) for each bootstrap replicate
+  theta_star <- colMeans(x_boot)/colMeans(y_boot)
+  dim(theta_star) <- c(B, mc_rep)
+  
+  ## Calculate parameters of E(x)/E(y) for each Monte Carlo replicate
+  theta_alpha <- apply(theta_star, 2, quantile, probs = alpha/2)
+  theta_1_alpha <- apply(theta_star, 2, quantile, probs = 1-(alpha/2))
+  stdev <- apply(theta_star, 2, sd)
+  
+  ## Create easily manipulatable data.frame of 3 conf int.
+  pct <- data.frame("mc_rep" = 1:mc_rep,
+                    "type" = "ci_pct",
+                    "lwr" = theta_alpha,
+                    "point_est" = theta_hat,
+                    "upr" = theta_1_alpha)
+  bbs <- data.frame("mc_rep" = 1:mc_rep,
+                    "type" = "ci_bbs",
+                    "lwr" = 2*theta_hat - theta_1_alpha,
+                    "point_est" = theta_hat,
+                    "upr" = 2*theta_hat - theta_alpha)
+  norm <- data.frame("mc_rep" = 1:mc_rep,
+                     "type" = "ci_norm",
+                     "lwr" = theta_hat - qnorm(1-(alpha/2))*stdev,
+                     "point_est" = theta_hat,
+                     "upr" = theta_hat + qnorm(1-(alpha/2))*stdev)
+  final <- rbind.data.frame(pct, bbs, norm)
+  return( final )
+  
+}
+
+
+
+## PART C: Create your own Monte Carlo--------------------------------
+
+## **REQUIRES DPLYR**
+## Returns analyses for 4 types of conf int with Monte Carlo
+##   replicates to test the performance against each other
+##   *Note: created only for ease of testing*
+mc_mean_ratio_ci <- function(n_x, mean_x, f_x, n_y, mean_y, f_y, 
+                             mc_rep, boot_rep, alpha){
+  ## input: n_x, n_y = length of vectors to be replicated;
+  ##        mean_x, mean_y = known means;
+  ##        f_x, f_y = generated list of Monte Carlo replicates;
+  ##        mc_rep, boot_rep = number of respective replicates;
+  ##        alpha = significance level
+  ## output: data.frame of coverage probability, average length,
+  ##         and average shape for each of the 4 conf int
+  
+  
+  mc_number <- mc_rep
+  ## Create matrices for conf int functions
+  # Create x matrix
+  test_x <- matrix(f_x, nrow = n_x, ncol = mc_rep)
+  #test_x <- matrix(sample(f_x, n_x*mc_rep, replace = TRUE), nrow = n_x, ncol = mc_rep)
+  # Create y matrix
+  test_y <- matrix(f_y, nrow = n_y, ncol = mc_rep)
+  #test_y <- matrix(sample(f_y, n_y*mc_rep, replace = TRUE), nrow = n_y, ncol = mc_rep)
+  
+  
+  ## Apply conf int functions
+  ci <- rbind.data.frame(mc_mean_ratio_jk(test_x, test_y, alpha), 
+                  mc_mean_ratio_bs(test_x, test_y, alpha, boot_rep)) %>%
+    group_by(mc_rep) %>% arrange(mc_rep)
+  
+  
+  ## Find 3 calculations for each method
+  # Find coverage probability for each method
+  ci_prcent <- ci %>%
+    filter(upr > (mean_x/mean_y) & 
+             lwr < (mean_x/mean_y) ) %>%
+    group_by(type) %>% arrange(type) %>%
+    summarize("cover_prob" = n()/mc_number)
+  # Find average length and shape for each method
+  ci_analysis <- ci %>%
+    group_by(type) %>% arrange(type) %>%
+    summarize("avg_length" = round( mean(upr - lwr),4 ),
+              "avg_shape" = round( mean( (upr-point_est)/ (point_est-lwr) ), 2) ) %>%
+    # Combine with coverage probability
+    left_join(ci_prcent, by= "type")
+  
+  ## Return 
+  return( ci_analysis )
+}
+```
+
+For example, two distributions were chosen with known means.
+
+The first distribution is normal with a mean of 10 and a variance of 5 while the second distribtuion is normal with a mean of 20 and a variance of 15. By this definition the actual mean ratio should be 0.5.
+
+1000 Monte Carlo replicates were created for nx, ny = 25.
+```{r, include= FALSE}
+# Set up variables the numbers
+mc_rep <- 1E3
+n_x <- 25
+mean_x <- 10
+f_x <- rnorm(n_x*mc_rep, mean_x, 5)
+n_y <- 25
+mean_y <- 20
+f_y <- rnorm(n_y*mc_rep, mean_y, 15)
+alpha <- 0.05
+B <- 1E4
+
+# Test
+# first: Larger vectors of x and y
+first <- mc_mean_ratio_ci(n_x, mean_x, f_x, n_y, mean_y, f_y, 
+                          mc_rep, B, alpha)
+#second: Smaller vectors of x and y
+second <- mc_mean_ratio_ci(10, mean_x, rnorm(10*mc_rep, mean_x, 5),
+                           10, mean_y, rnorm(10*mc_rep, mean_y, 15),
+                           mc_rep, B, alpha)
+```
+```{r, echo= FALSE}
+col_names <- c("Method", "Avg Length", "Avg Shape", "Coverage Prob")
+knitr::kable(first, col.names = col_names, caption = "Mean Ratio Analyses for Different Resampling Methods (n = 25)")
+```
+
+The same analyses were done for nx, ny = 10.
+```{r, echo= FALSE}
+knitr::kable(second, col.names = col_names, caption = "Mean Ratio Analyses for Different Resampling Methods (n = 10)")
+```
+
+All the methods provided a coverage probability of slightly below 95%, as expected for using a significance level of 0.05. Jackknife and normal approximation had a greater coverage probability than the percentile method which had a greater coverage probability than the basic bootstrap. Overall, all the methods grew closer to the expected 95% with greater n.
+
+
+The percentile method tends to underestimate the mean ratio while basic bootstrap overestimates the mean ratio. Jackknife and normal approximation have very symmetrical confidence intervals around the point estimate, possibly due to the way these confidence intervals were calculated. In the analyses for n = 10, normal approximation has a greater coverage probability but also has an intensely larger average length compared to the other methods, suggesting that it is more influenced by extreme values. With greater n, all the average shapes became more symmetrical and the average lengths became shorter.

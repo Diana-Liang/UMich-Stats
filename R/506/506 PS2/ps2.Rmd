@@ -1,0 +1,473 @@
+---
+title: "Stats 506: RECS 2015 and MouseTrap Analysis"
+author: "Diana Liang"
+date: "10/11/2019"
+output:
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(fig.width=12, fig.height=8)
+
+## Download RECS 2015 data and Norm Functions
+library(readr)
+recs <- read_csv("recs2015_public_v4.csv")
+source("~/2019/UMich/Fall 2019/Stats 506/PS2/ps2_q2_funcs.R")
+
+## Set up libraries
+library(dplyr)
+library(tidyverse)
+library(tidyr)
+library(mousetrap)
+library(lme4)
+
+## Decode and Replicate Functions,
+## and Character to Numeric Function-----------------------
+
+# Decodes numerics into space heating fuel type
+decode_fuel <- function(obj){
+  # input: numeric 1, 2, 3, 5, 7, 21, -2
+  # output: corresponding heating fuel type
+  
+  obj <- as.character(obj)
+  switch(obj,
+         "1" = "Natural",
+         "2" = "Propane",
+         "3" = "Fuel Oil/Kerosene",
+         "5" = "Electricity",
+         "7" = "Wood",
+         "21" = "Other",
+         "-2" = "NA")
+}
+
+# Decodes numerics into census division
+decode_cen_div <- function(obj){
+  # input: numeric 1-10
+  # output: corresponding census division
+  
+  switch(obj,
+         "New England",
+         "Middle Atlantic",
+         "East North Central",
+         "West North Central",
+         "South Atlantic",
+         "East South Central",
+         "West South Central",
+         "Mountain North",
+         "Mountain South",
+         "Pacific")
+}
+
+# Decodes a character into census urban type
+
+decode_cen_type <- function(obj){
+  # input: character "U", "C", or "R"
+  # output: corresponding census type
+  
+  switch(obj,
+         "U" = "Urban Area",
+         "C" = "Urban Cluster",
+         "R" = "Rural")
+}
+
+# Decodes numeric into corresponding equipment household behavior
+decode_equip <- function(obj){
+  # input: numeric 1-5, 9, or -9
+  # output: corresponding equipment behavior
+  
+  obj <- as.character(obj)
+  switch(obj,
+         "1" = "Set and leave",
+         "2" = "Manually adjust",
+         "3" = "Automatically adjust",
+         "4" = "As needed",
+         "5" = "No control",
+         "9" = "Other",
+         "-9" = NA)
+}
+
+# Weighs values based on units rather than percentages
+# that are meant to be added to get weighted mean
+weighted_value <- function(x,w){
+  # input: values and unit weights
+  # output: weighted values
+  
+  return((x*w)/sum(w))
+}
+
+# Finds variance between mean and singular estimate
+# that is meant to be added to get overall variance
+variance <- function(mean, est){
+  # input: mean value and estimate value
+  # output: singular variance
+  
+  inf <- 4/96
+  val <- (est-mean)^2
+  return(inf*val)
+}
+
+# Breaks down string into numeric list
+as_num_list <- function(chr){
+  # input: string of bracketed numbers 
+  #        separated by ","
+  # output: list of numerics
+  
+  chr <- chr %>%
+    substr(2,str_length(chr)-1) %>%
+    strsplit(",")
+  
+  chr <- lapply(chr, as.double)
+  return(chr)
+}
+```
+Introduction to 2015 RECS
+
+  The 2015 Residential Energy Consumption Survey breaks down and quantifies how the residents of this nation consumed energy in 2015. By analyzing this data, we can find patterns to understand the current trends of energy consumption and provide insight into large scale energy crises.
+
+
+Part A: National Average Winter Temperatures at Night
+```{r, echo= FALSE}
+## A: Find avg winter night temp for homes that use space heating
+
+# Find standard error for 95% conf interval
+se_1 <- recs %>%
+  select(HEATHOME, TEMPNITE, NWEIGHT, BRRWT1:BRRWT96) %>%
+  filter(HEATHOME == 1, TEMPNITE >0) %>%
+  select(TEMPNITE, NWEIGHT,BRRWT1:BRRWT96) %>%
+  mutate_at(vars(NWEIGHT,BRRWT1:BRRWT96), funs(weighted_value(TEMPNITE,.))) %>%
+  select(NWEIGHT, BRRWT1:BRRWT96) %>%
+  summarize_all(funs(sum)) %>%
+  mutate_at(vars(BRRWT1:BRRWT96), funs(variance(NWEIGHT,.))) %>%
+  select(-NWEIGHT) %>%
+  rowSums() %>%
+  as.numeric() %>% sqrt()
+
+# Find avg winter night temp for homes that use space heating
+wint_n_heat <- recs %>%
+  select(HEATHOME, TEMPNITE, NWEIGHT, BRRWT1:BRRWT96) %>%
+  filter(HEATHOME == 1, TEMPNITE >0) %>%
+  select(TEMPNITE, NWEIGHT,BRRWT1:BRRWT96) %>%
+  transmute(avg_temp = weighted_value(TEMPNITE, NWEIGHT)) %>%
+  summarize(avg_temp = sum(avg_temp)) %>%
+  mutate(lower_95 = avg_temp - 2*se_1,     # create lower
+         upper_95 = avg_temp + 2*se_1) %>% # and upper bounds 
+  transmute(`Average Temp` = avg_temp,
+            `Lower 95%` = lower_95,
+            `Upper 95%` = upper_95)
+
+knitr::kable(wint_n_heat, caption = "Average Winter Night Temp")
+```
+
+
+  We would have assumed that residents would set their temperatures higher during the winter season, but the table above shows that residents set their temperatures slightly around 68 degrees Fahrenheit. The 95% confidence interval doesn't significantly deviate from this temperature, suggesting that both northern and southern residents, despite the temperature differences between the areas during the winter, have similar temperatures at night.
+
+PART B: Proportions for Fuel Type
+
+```{r, echo= FALSE}
+## B: Fuel Proportions---------------------------------------------
+
+# Find fuel prop for NWEIGHT
+fuel_prop <- recs %>%
+  filter(HEATHOME == 1) %>%
+  select(DIVISION, UATYP10, FUELHEAT, 
+         NWEIGHT) %>%
+  mutate(div = sapply(DIVISION, decode_cen_div),
+         utype = sapply(UATYP10, decode_cen_type),
+         fuel = sapply(FUELHEAT, decode_fuel),
+         weight = NWEIGHT) %>%
+  group_by(div, utype, fuel) %>%
+  summarize(weight = sum(weight)) %>%
+  ungroup() %>% group_by(div, utype) %>%
+  mutate(prop = 100*weight/sum(weight)) %>%
+  select(-weight)
+
+# Find std error prop from replicates
+se_prop <- recs %>%
+  filter(HEATHOME == 1) %>%
+  select(DIVISION, UATYP10, FUELHEAT, 
+         BRRWT1:BRRWT96) %>%
+  mutate(div = sapply(DIVISION, decode_cen_div),
+         utype = sapply(UATYP10, decode_cen_type),
+         fuel = sapply(FUELHEAT, decode_fuel)) %>%
+  select(div, utype, fuel, BRRWT1:BRRWT96) %>%
+  gather(key = "rep_name", value = "rep_w", BRRWT1:BRRWT96) %>%
+  group_by(div, utype, fuel, rep_name) %>%
+  summarize(rep_w = sum(rep_w)) %>%
+  ungroup() %>% group_by(div, utype, rep_name) %>%
+  mutate(prop_r = 100*rep_w/sum(rep_w)) %>%
+  select(-rep_w) %>%
+  left_join(fuel_prop, by = c("div", "utype", "fuel")) %>%
+  ungroup() %>% group_by(div, utype, fuel, rep_name) %>%
+  transmute(var = variance(prop, prop_r)) %>%
+  ungroup() %>% group_by(div, utype, fuel) %>%
+  summarize(se = sqrt(sum(var)))
+
+# Add 95% conf interval to fuel prop
+fuel_prop <- fuel_prop %>%
+  left_join(se_prop, by= c("div", "utype", "fuel")) %>%
+  ungroup() %>%
+  transmute(`Division` = div,
+            `Urban Type` = utype,
+            fuel = fuel,
+            prop = prop,
+            se = se) %>%
+  group_by(`Division`, `Urban Type`, fuel) %>%
+  transmute(lower = round(prop - 2*se, digits = 2),
+            prop = round(prop, digits = 2),
+            upper = round(prop + 2*se, digits =2)) %>%
+  transmute(perc = sprintf("(%g, %g, %g)", lower, prop, upper))%>%
+  spread(key = fuel, value = perc)
+
+fuel_prop[is.na(fuel_prop)] <- "(0.00, 0.00, 0.00)"
+
+knitr::kable(fuel_prop, caption = "Fuel Type Prop per Division and Urban Type (Lower 95%, Mean, Upper 95%)")
+```
+
+Most residents use electricity as their fuel source with natural gas as the second most common. The other sources are quite rare and only really feature in rural urban types and Mountain divisions. Even with those specific areas, the named fuel sources effectively cover all the types of fuel that are used.
+
+
+PART C: Average Temperatures at Night, Day when home, Day when gone by Division and Urban Type
+
+```{r, echo=FALSE}
+## C: Plot of Temps ----------------------------------------------
+
+# Calculate actual avg temps for 
+# night, day home, and day gone
+wint_temp <- recs %>%
+  filter(TEMPNITE > 0, TEMPHOME > 0, TEMPGONE >0) %>%
+  transmute(div = sapply(DIVISION, decode_cen_div),
+            utype = sapply(UATYP10, decode_cen_type),
+            night = TEMPNITE,
+            home = TEMPHOME,
+            gone = TEMPGONE,
+            weight = NWEIGHT) %>%
+  group_by(div, utype) %>%
+  mutate(night = weighted_value(night, weight), 
+         home = weighted_value(home, weight), 
+         gone = weighted_value(gone, weight)) %>%
+  summarize(night = sum(night),
+            home = sum(home),
+            gone = sum(gone))
+
+# Calculate std errs
+se_all <-recs %>%
+  filter(TEMPNITE > 0, TEMPHOME > 0, TEMPGONE >0) %>%
+  mutate(div = sapply(DIVISION, decode_cen_div),
+         utype = sapply(UATYP10, decode_cen_type),
+         night = TEMPNITE,
+         home = TEMPHOME,
+         gone = TEMPGONE) %>%
+  select(div, utype, night, home, gone, BRRWT1:BRRWT96) %>%
+  gather(key = "rep_name", value = "rep_w", BRRWT1:BRRWT96) %>%
+  group_by(div, utype, rep_name) %>%
+  summarize(night_r = sum(weighted_value(night, rep_w)),
+            home_r = sum(weighted_value(home, rep_w)),
+            gone_r = sum(weighted_value(gone, rep_w))) %>%
+  ungroup() %>% group_by(div, utype) %>%
+  left_join(wint_temp, by = c("div","utype")) %>%
+  group_by(div, utype, rep_name) %>%
+  transmute(night_se = variance(night, night_r),
+            home_se = variance(home, home_r),
+            gone_se = variance(gone, gone_r)) %>%
+  ungroup() %>% group_by(div, utype) %>%
+  summarize(night_se = sqrt(sum(night_se)),
+            home_se = sqrt(sum(home_se)),
+            gone_se = sqrt(sum(gone_se)))
+
+# Create 95% conf interval for each temp
+wint_temp <- wint_temp %>%
+  left_join(se_all, by = c("div", "utype")) %>%
+  mutate(n_lower = night - 2*night_se,
+         n_upper = night + 2*night_se,
+         h_lower = home - 2*home_se,
+         h_upper = home + 2*home_se,
+         g_lower = gone - 2*gone_se,
+         g_upper = gone + 2*gone_se) %>%
+  select(div, utype, 
+         n_lower, night, n_upper,
+         h_lower, home, h_upper,
+         g_lower, gone, g_upper)
+
+# Create easy to read and plot table
+nwint_temp <- wint_temp %>%
+  select(div, utype, n_lower, night, n_upper) %>%
+  group_by(div, utype) %>%
+  transmute(ttype= "night",
+            lower = n_lower,
+            temp = night,
+            upper = n_upper)
+hwint_temp <- wint_temp %>%
+  select(div, utype, h_lower, home, h_upper) %>%
+  group_by(div, utype) %>%
+  transmute(ttype= "home",
+            lower = h_lower,
+            temp = home,
+            upper = h_upper)
+gwint_temp <- wint_temp %>%
+  select(div, utype, g_lower, gone, g_upper) %>%
+  group_by(div, utype) %>%
+  transmute(ttype= "gone",
+            lower = g_lower,
+            temp = gone,
+            upper = g_upper)
+three_temp <- bind_rows(nwint_temp, hwint_temp, gwint_temp)
+
+# Plot that table
+ggplot(three_temp, aes(x=utype, y= temp, color=ttype)) +
+  geom_point(position = position_dodge(0.5)) +
+  geom_errorbar(aes(ymin=lower, ymax=upper), 
+                position= position_dodge(0.5),
+                width= 0.5)+
+  facet_wrap(~div, ncol= 5)+
+  theme(legend.position="top", 
+        axis.text.x=element_text(angle=90, hjust=.1, size=8),
+        strip.text.x = element_text(size=10)) +
+  labs(title="Average Temperatures By Region Division and Urban Type ", 
+       x ="Division and Urban Type", y = "Temp. (fahrenheit)",
+       color = "Temp. Type")
+```
+
+Throughout all the different divisions and urban types, the average temperatures during the day when residents are gone are the lowest and during the day when residents are home are the highest, with temperatures during the night inbetween the two values. Mountain North, Mountain South, and New England have the widest 95% confidence intervals and likely have the greatest variance in average temperatures. We should be careful to put too much weight into these interpretations, though, since the region of average temperatures is contained within 10 degrees and does not seem as dramatic when viewed on a greater range of temperatures.
+
+PART D: Median Difference between Day and Night Temperatures
+
+```{r, echo = FALSE}
+## D: Weighted Median Day vs Night-----------------------------------------
+
+# Calculate actual diff
+day_night <- recs %>%
+  filter(HEATHOME == 1, 
+         EQUIPMUSE > 0, TEMPHOME > 0, TEMPNITE > 0) %>%
+  select(EQUIPMUSE, TEMPHOME, TEMPNITE, NWEIGHT) %>%
+  transmute(equip = sapply(EQUIPMUSE, decode_equip),
+            diff = TEMPHOME - TEMPNITE,
+            NWEIGHT = NWEIGHT) %>%
+  group_by(equip, diff) %>%
+  summarize(NWEIGHT = sum(NWEIGHT)) %>%
+  arrange(equip, diff) %>%
+  ungroup() %>% group_by(equip) %>%
+  summarize(diff = diff[cumsum(NWEIGHT) > 
+                          (sum(NWEIGHT)/2)][1])
+
+# Calculate std err for diff
+se_diff <- recs %>%
+  filter(HEATHOME == 1, 
+         EQUIPMUSE > 0, TEMPHOME > 0, TEMPNITE > 0) %>%
+  mutate(equip = sapply(EQUIPMUSE, decode_equip),
+         diff_r = TEMPHOME - TEMPNITE) %>%
+  select(equip, diff_r, BRRWT1:BRRWT96) %>%
+  gather(key = "rep_name", value = "rep_w", BRRWT1:BRRWT96) %>%
+  group_by(equip, diff_r, rep_name) %>%
+  summarize(rep_w = sum(rep_w)) %>%
+  mutate(rep_n = as.numeric(substr(rep_name, 6, str_length(rep_name)))) %>%
+  select(-rep_name) %>%
+  arrange(equip, diff_r, rep_n) %>%
+  ungroup() %>% group_by(equip, rep_n) %>%
+  summarize(diff_r = diff_r[cumsum(rep_w) >= sum(rep_w)/2][1]) %>%
+  left_join(day_night, by = "equip") %>%
+  group_by(equip, rep_n) %>%
+  transmute(var = variance(diff, diff_r)) %>%
+  ungroup() %>% group_by(equip) %>%
+  summarize(se = sqrt(sum(var)))
+
+# Create 95% conf interval
+day_night <- day_night %>%
+  left_join(se_diff, by = "equip") %>%
+  group_by(equip) %>%
+  transmute(lower = diff - 2*se,
+            mean = diff,
+            upper = diff + 2*se) %>%
+  ungroup() %>%
+  transmute(`Equip Behavior` = equip,
+            `Lower 95%` = lower,
+            `Median Diff` = mean,
+            `Upper 95%` = upper)
+ 
+knitr::kable(day_night, caption = "Median Difference Between Day and Night Temperatures (Fahrenheit)")
+```
+
+Residents tend to set the day temperature higher than the night temperature, only by a few degrees if at all. The equipment behaviors with minimal adjustment have no variance in the median difference while the ones with more adjustment had greater variance. Behaviors "No Control" and "Other" were the only ones that had 95% confidence intervals that include negative differences, meaning that these are behaviors most likely to have night temperatures greater than day temperatures.
+
+
+Introduction to MouseTrap
+
+Previously, we looked at how the change in position over time could quantify hesitation. Using this quantification, we can model this hesitation variable along with other variables in order to make meaningful conclusions about the data.
+
+Modeling Metrics on Condition
+
+As a demonstration, we are modeling the 4 separate metrics; which will be calculated from the x positions, y positions, and times provided by MouseTrap data; based on the fixed effect 'Condition' with random effects 'Subject' and 'Exemplar'. Since each metric will be in different units, we are modeling the log(metrics), so that we can compare values between them. Below is a table and plot of the condition beta estimates along with their standard errors.
+
+```{r, echo = FALSE }
+# Create table of relevant info
+KH17 <- mousetrap::KH2017_raw %>%
+  transmute(subject = subject_nr,
+            trial = count_trial,
+            condition = Condition,
+            exemplar = Exemplar,
+            correct = correct,
+            x_pos = as_num_list(xpos_get_response),
+            y_pos = as_num_list(ypos_get_response),
+            time = as_num_list(timestamps_get_response)) %>%
+  group_by(subject,trial)
+
+
+
+## C: Compute metrics and form relevant table----------------
+
+# Extract x,y,t and create new metrics table
+metrx <- matrix(nrow= nrow(KH17), ncol = 4)
+colnames(metrx) = c("total_dist", "max_dev", "avg_dev", "AUC")
+for (i in 1:nrow(KH17)){
+  metrx[i, ] <- c(KH17[i,6], KH17[i,7], KH17[i,8]) %>%
+    unlist() %>%
+    matrix(ncol=3) %>%
+    normalize() %>%
+    norm_metrics()
+}
+metrx <- as_tibble(metrx)
+
+# Create table of relevant data for modelling
+KH_new <- bind_cols(select(KH17, subject, trial, condition, exemplar, correct),
+                 metrx)
+KH_new <- KH_new %>%
+  filter(correct == 1) %>%
+  select(-correct)
+
+
+## D: Modelling with S4
+
+# Model each metric against condition
+tot_dist <- lmer(log(total_dist)~ condition + (1|subject) + (1|exemplar), KH_new)
+max_dv <- lmer(log(max_dev)~ condition + (1|subject) + (1|exemplar), KH_new)
+avg_dv <- lmer(log(avg_dev)~ condition + (1|subject) + (1|exemplar), KH_new)
+area <- lmer(log(AUC)~ condition + (1|subject) + (1|exemplar), KH_new)
+
+# Create vectors to fit into a tibble
+metrics <- c("Total Distance", 
+             "Max Deviation",
+             "Average Deviation", 
+             "Area Under Curve")
+beta_est <- c(summary(tot_dist)$coefficients[2,1],
+              summary(max_dv)$coefficients[2,1],
+              summary(avg_dv)$coefficients[2,1],
+              summary(area)$coefficients[2,1])
+std_err <- c(summary(tot_dist)$coefficients[2,2],
+             summary(max_dv)$coefficients[2,2],
+             summary(avg_dv)$coefficients[2,2],
+             summary(area)$coefficients[2,2])
+
+# Create the tibble table
+table <- tibble(`Metrics` = metrics,
+                `Beta Estimate` = beta_est,
+                `Std Error` = std_err) %>%
+  arrange(desc(`Beta Estimate`))
+
+# Visualize by table and plot
+knitr::kable(table, caption = "Beta Estimates for Metrics")
+ggplot(table, aes(x=`Metrics`, y=`Beta Estimate`)) +
+  geom_point()+
+  labs(title= "Beta Estimates for Different Metrics")
+```
+
+Since the model was taken of the log(metrics), we can directly compare the beta estimates to understand how greatly 'Condition' affects the 4 metrics. The least negative beta estimate will have the greatest effect on the metric, so 'Condition' has the greatest affect on 'Total Distance'.

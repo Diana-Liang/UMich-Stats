@@ -1,0 +1,383 @@
+---
+title: "ps5"
+author: "Diana Liang"
+date: "12/4/2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+## Load libraries
+library(data.table)
+library(tidyr)
+source("~/2019/UMich/Fall 2019/Stats 506/PS2/ps2_q1_funcs.R")
+```
+The data.table package in R follows a similar pattern of data manipulation to dplyr without creating unnecessary copies of the dataset and can combine what would have been multiple lines of code into a singular line. Thus it is both more efficient in memory and in code. Below are two examples of analyses that are possible using data.tables.
+
+Part 1: Internet in Urban vs Rural Homes by Division
+This analysis, that was done before using Stata, is reproduced below using data.table. Once again Mountain South had the greatest disparity in internet access between urban and rural areas. 
+
+```{r, echo = FALSE}
+## Prepare data
+recs <- fread("~/2019/UMich/Fall 2019/Stats 506/PS2/recs2015_public_v4.csv")
+
+## Calculate proportion for nweight
+basic <- recs
+basic$UATYP10 <- replace(basic$UATYP10, basic$UATYP10 != "R", "U")
+basic <- basic[, .(prop_n = 100*(sum(NWEIGHT*INTERNET)/sum(NWEIGHT))),
+                 by = .(DIVISION, UATYP10)] %>%
+  # pivot wider to get urband and rural proportions
+  dcast(DIVISION ~ UATYP10, value.var = "prop_n")
+# rename for ease
+names(basic) <- c("Division", "rprop_n", "uprop_n")
+
+## Calculate proportion for replicate weights
+repl <- recs
+# only "R" and "U"
+repl$UATYP10 <- replace(repl$UATYP10, repl$UATYP10 != "R", "U")
+# pivot all the replicate weights under 1 column
+repl <- melt(repl,
+              measure.vars = c(paste("BRRWT", 1:96, sep = "")),
+              variable.name = "rep",
+              value.name = "rweight") %>%
+  # calculate proportions
+  .[, .(prop_r = 100*(sum(rweight*INTERNET)/sum(rweight))),
+               by = .(DIVISION, UATYP10, rep)] %>%
+  # pivot wider for rural and urban prop
+  dcast(DIVISION + rep ~ UATYP10, value.var = "prop_r")
+# rename for ease
+names(repl) <- c("Division", "rep", "rprop_r", "uprop_r")
+
+## Combine nweight and replicate weights
+final <- merge(basic, repl, by = "Division", all = FALSE) %>%
+  # calculate difference in prop
+  .[, `:=`(diff_n = uprop_n - rprop_n, 
+           diff_r = uprop_r - rprop_r)] %>%
+  # find 95% confidence interval
+  .[, .(Division, uprop_n, rprop_n, diff_n, rep,
+        var_u = (4/96)*(uprop_n - uprop_r)^2,
+        var_r = (4/96)*(rprop_n - rprop_r)^2,
+        var_diff = (4/96)*(diff_n - diff_r)^2)] %>%
+  .[, .(uprop_n = mean(uprop_n),rprop_n = mean(rprop_n), 
+        diff_n = mean(diff_n),
+        se_u = sum(var_u)^(1/2), se_r = sum(var_r)^(1/2),
+        se_diff = sum(var_diff)^(1/2)), by = "Division"] %>%
+  # put in order of descending difference
+  .[order(-diff_n)] %>%
+  # format table
+  .[, .(Division = sapply(Division, decode_cen_div), 
+        Urban = sprintf("%4.2f (%4.2f, %4.2f)", uprop_n,
+                        uprop_n - 1.96*se_u, uprop_n + 1.96*se_u),
+        Rural = sprintf("%4.2f (%4.2f, %4.2f)", rprop_n,
+                        rprop_n - 1.96*se_r, rprop_n + 1.96*se_r),
+        Diff = sprintf("%4.2f (%4.2f, %4.2f)", diff_n,
+                        diff_n - 1.96*se_diff, diff_n + 1.96*se_diff))]
+
+## Create final table
+col_name1 <- c("Division", "Urban(%)", "Rural(%)", "Diff(%)")
+knitr::kable(final, col.names=col_name1, 
+             caption="Disparity of Homes with Internet between Urban and Rural Areas")
+```
+
+Part 2: Crohn’s or No Crohn’s
+This example uses DNA methylation data from multiple probes placed on each chromosome to detect Crohn’s disease. The analysis below is to decide if these probes are significant in this detection. The data itself required manipulation to get rid of the 68 lines of header information about the study itself before the actual data, as well as the ending line of text.
+First, proportion of probes that were significant by t-statistic were calculated by each probe group.
+
+
+```{r, echo = FALSE}
+## Part A: Preparing data on command line-------------------------------------------
+# Windows doesn't have terminal
+# so these were done in ssh
+
+## Load data
+#wget ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE138nnn/GSE138311/matrix/GSE138311_series_matrix.txt.gz
+#gunzip -c "GSE138311_series_matrix.txt.gz > DNA_data.txt
+
+## Look at data
+#head -n100 DNA_data.txt
+#grep -n "ID_REF" DNA_data.txt
+
+## Data matrix starts at line 69, which means 68 lines of header info
+#tail -n +69 DNA_data.txt | head -n -1 > DNA_methylation.txt
+```
+
+```{r, echo = FALSE}
+## Part B: Read in data-----------------------------------------------------------
+# read in data
+data <- fread("~/2019/UMich/Fall 2019/Stats 506/PS5/DNA_methylation.txt")
+# filter data so ID_REF only begin with "ch" and discard 99
+data <- data[grepl("^ch", ID_REF), -c("GSM4105199")] %>%
+# pivot longer so each row is single sample-probe pair
+  melt(measure.vars = c(paste("GSM41051", 87:98, sep = "")),
+       variable.name = "sample",
+       value.name = "methylation") %>%
+
+## Part C--------------------------------------------------------------
+# add column sample_group: Crohn's or non-Crohn's
+  .[, `:=`(sample_group,
+           ifelse(sample %in% c(paste("GSM41051", 87:93, sep = "")),
+                           "C", "N"))]
+
+## Part D: Calculate t-stat for each ID_REF-----------------------------------------------
+# create new data.table by computing t-stat
+t_stat <- data
+t_stat <- t_stat[, .(ID_REF, methylation, sample_group)] %>%
+  # find parameters to calculate t-stat
+  .[, .(x_bar = mean(methylation),
+        var = var(methylation), 
+        n = .N), by = .(ID_REF, sample_group)] %>% 
+  # calculate t-stat
+  .[order(ID_REF)] %>%
+  .[, .(t_top = (x_bar[2]-x_bar[1]),
+        sp2 = ((n[1]-1)*var[1] + (n[2]-1)*var[2])/(n[1]+n[2]-2),
+        t_bottom = ((1/n[1])+(1/n[2]))^0.5,
+        df = n[1]+n[2]-2), by = ID_REF] %>%
+  .[, .(t_stat = t_top/((sp2^0.5)*t_bottom), df), by = ID_REF] %>%
+
+## Part E----------------------------------------------------------------------------
+# add column probe_group: 5 characters of probe ID
+  .[, `:=`(probe_group = substr(ID_REF, 1,5))]
+
+## Part F-----------------------------------------------------------------------------
+# prop of significant probes per probe group
+proportion <- t_stat
+proportion <- proportion[, `:=`(sign = ifelse(abs(t_stat) > qt(1-0.05/2, df),
+                                          1, 0))] %>%
+  .[, .(prop = sum(sign)/.N), by = probe_group]
+
+## Create table for proportions
+col_name2 <- c("Probe Group", "Proportion")
+knitr::kable(proportion, col.names=col_name2, 
+             caption="Proportion of Significant Probes per Probe Group")
+```
+
+As shown above, ch.14 has much higher proportion of significant probes compared to all the other probes.
+
+Next the p-values were calculated for each probe group by two-tailed, upper, and then lower significance. A significance level of 0.05 was consistently used for all three.
+
+
+```{r, echo = FALSE}
+## Part G--------------------------------------------------------------------------------------
+
+# Calculates t-stat for each probe group with or without
+# a permutation of the sample labels
+permute_t_stat <- function(table, type, permute){
+  # input: 1) table: data.table from part C
+  #        2) type: "two-tailed", "greater", or "lesser"
+  #            depending on type of t-test
+  #        3) permute: TRUE or FALSE depending on if
+  #            sample labels should be permuted
+  # output: data.table of one column containing t-stat
+  #         for each probe group
+  
+  ## set up table
+  table <- table[, `:=`(probe_group = substr(ID_REF, 1,5))]
+  
+  ## check if permute
+  if(permute == TRUE){
+    # set up sampling origin
+    label_samp <- data.table(sample = table$sample, 
+                             OG = table$sample_group) %>%
+      .[, list(n = 1), by = .(sample, OG)] %>%
+      .[, -c("n")]
+    
+    # sample from it
+    perm_list <- data.table(sample = label_samp$sample,
+                            sample_group = sample(label_samp$OG))
+    # create t stat table
+    perm_table <- table[, .(ID_REF, sample, methylation, probe_group)]
+    t_table <- merge(perm_table, perm_list, by = "sample")
+    
+  ## if not permute use original sample labels
+  } else{
+    # use original
+    t_table <- table
+  }
+  
+  ## calculate t stat
+  t_table <- t_table[, .(x_bar = mean(methylation),
+                         var = var(methylation), 
+                         n = .N), by = .(probe_group, ID_REF, sample_group)] %>% 
+    .[order(ID_REF)] %>%
+    .[, .(t_top = (x_bar[2]-x_bar[1]),
+          sp2 = ((n[1]-1)*var[1] + (n[2]-1)*var[2])/(n[1]+n[2]-2),
+          t_bottom = ((1/n[1])+(1/n[2]))^0.5,
+          df = n[1]+n[2]-2), by = .(probe_group, ID_REF)] %>%
+    .[, .(t_stat = t_top/((sp2^0.5)*t_bottom), df), by = .(probe_group, ID_REF)]
+  
+  ## find which are significant based on test type
+  ## and calculate t-statistic
+  if(type == "two-tailed"){ 
+    t_table <- t_table[, `:=`(sign = ifelse(abs(t_stat) > qt(1-0.05/2, df),
+                                            1, 0))] %>%
+      .[, `:=`(t_score = abs(t_stat)*sign)] %>%
+      .[, .(t_stat = sum(t_score)/.N), by = probe_group]
+      
+  } else if(type == "greater"){
+    t_table <- t_table[, `:=`(sign = ifelse(t_stat > qt(1-0.05, df),
+                                            1, 0))] %>%
+      .[, `:=`(t_score = t_stat*sign)] %>%
+      .[, .(t_stat = sum(t_score)/.N), by = probe_group]
+  } else if(type == "lesser"){
+    t_table <- t_table[, `:=`(sign = ifelse(t_stat < qt(0.05, df),
+                                            1, 0))]%>%
+      .[, `:=`(t_score = t_stat*sign)] %>%
+      .[, .(t_stat = sum(t_score)/.N), by = probe_group]
+  }
+  
+  # order data to prepare for cbinds
+  t_table <- t_table[order(probe_group)]
+  
+  # return different tables depending on permute
+  if(permute == FALSE){
+    return(t_table)
+  } else{
+    return(t_table$t_stat)
+  }
+  
+}
+
+## Part H: 1000 regular permutations--------------------------------------------
+# Set up t-stat table without permutations
+original_1 <- permute_t_stat(data, "two-tailed", FALSE)
+
+# Set up probe_group for permutations
+holder <- data.table(probe_group = original_1$probe_group) %>%
+  .[order(probe_group)]
+
+## Run 1000 permutations
+time_1 <- system.time({ perms <- as.data.table(lapply(1:1000, function(x) 
+  permute_t_stat(data, "two-tailed", TRUE)))
+# Add probe_group column
+perms <- cbind(holder, perms) })
+
+## Calculate p-values
+# Add original t-stat column
+perms <- merge(perms, original_1, by = "probe_group") %>%
+  # pivot longer to calculate p-value
+  melt(measure.vars = c(paste("V", 1:1000, sep = "")),
+       variable.name = "perm",
+       value.name = "perm_t") %>%
+  # calculate p-value
+  .[, `:=`(sig = ifelse(abs(t_stat) <= abs(perm_t), 1, 0))] %>%
+  .[, .(p_value = (sum(sig)+1)/(.N+1)), by = probe_group]
+
+## Create table for p-values
+col_name3 <- c("Probe Group", "P-values")
+knitr::kable(perms, col.names=col_name3, 
+             caption="P-values for Two-tailed Significance")
+
+```
+
+The two-tailed p-values seem to show no probe groups were significant at or below 0.05. ch.14 is the only one that comes even close to the significance level, which is the same probe group that had an abnormally high proportion of significant probes in the previous table.
+
+```{r, echo = FALSE}
+## Part I: 1000 Parallel by mclapply permutations------------------------------
+## aka windows was not made for this
+
+# Load library
+library(parallel)
+
+## Set up t-stat table without permutations
+original_2 <- permute_t_stat(data, "greater", FALSE)
+
+## Run for 1000 permutations using mclapply
+time_2 <- system.time({ parallel_perms <- as.data.table(mclapply(1:1000, function(x) 
+  permute_t_stat(data, "greater", TRUE)))
+# Add probe_group column
+parallel_perms <- cbind(holder, parallel_perms) })
+
+## Calculate p-values
+# Add original t-stat column
+parallel_perms <- merge(parallel_perms, original_2, by = "probe_group") %>%
+  # pivot longer to calculate p-value
+  melt(measure.vars = c(paste("V", 1:1000, sep = "")),
+       variable.name = "perm",
+       value.name = "perm_t") %>%
+  ## calculate p-value
+  .[, `:=`(sig = ifelse(abs(t_stat) <= abs(perm_t), 1, 0))] %>%
+  .[, .(p_value = (sum(sig)+1)/(.N+1)), by = probe_group]
+
+## Create table for p-values
+knitr::kable(parallel_perms, col.names=col_name3, 
+             caption="P-values for Upper Significance")
+```
+
+
+```{r, echo = FALSE}
+## Part J: 1000 Parallel by futures Permutation----------------------------------------------
+
+# Load libraries
+library(future)
+plan(multisession)
+
+## Set up t-stat table without permutations
+original_3 <- permute_t_stat(data, "greater", FALSE)
+
+# Set up starting for for-loop
+future_perms <- holder
+
+## Run for 1000 permutations using future
+time_3 <- system.time({
+  for(i in 1:10){
+    # Cut up into 5 sections to split up work
+    fut_iter_1 %<-% lapply(1:20, function(x) permute_t_stat(data, "lesser", TRUE))
+    fut_iter_2 %<-% lapply(1:20, function(x) permute_t_stat(data, "lesser", TRUE))
+    fut_iter_3 %<-% lapply(1:20, function(x) permute_t_stat(data, "lesser", TRUE))
+    fut_iter_4 %<-% lapply(1:20, function(x) permute_t_stat(data, "lesser", TRUE))
+    fut_iter_5 %<-% lapply(1:20, function(x) permute_t_stat(data, "lesser", TRUE))
+    
+    # Coerce into properly labelled data.tables
+    num <- 100*(i-1)
+    fut_iter_1 <- as.data.table(fut_iter_1)
+    names(fut_iter_1) <- paste("V", (num+1):(num+20), sep = "")
+    fut_iter_2 <- as.data.table(fut_iter_2)
+    names(fut_iter_2) <- paste("V", (num+21):(num+40), sep = "")
+    fut_iter_3 <- as.data.table(fut_iter_3)
+    names(fut_iter_3) <- paste("V", (num+41):(num+60), sep = "")
+    fut_iter_4 <- as.data.table(fut_iter_4)
+    names(fut_iter_4) <- paste("V", (num+61):(num+80), sep = "")
+    fut_iter_5 <- as.data.table(fut_iter_5)
+    names(fut_iter_5) <- paste("V", (num+81):(num+100), sep = "")
+    
+    # Combine all the data.tables
+    future_perms <- cbind(future_perms, fut_iter_1, fut_iter_2,fut_iter_3,
+                          fut_iter_4, fut_iter_5)
+  }
+   })
+
+## Calculate p-value
+# Add original t-stat column
+future_perms <- merge(future_perms, original_3, by = "probe_group") %>%
+  # pivot longer to calculate p-value
+  melt(measure.vars = c(paste("V", 1:1000, sep = "")),
+       variable.name = "perm",
+       value.name = "perm_t") %>%
+  # calculate p-value
+  .[, `:=`(sig = ifelse(abs(t_stat) <= abs(perm_t), 1, 0))] %>%
+  .[, .(p_value = (sum(sig)+1)/(.N+1)), by = probe_group]
+  
+## Create table for p-values
+knitr::kable(future_perms, col.names=col_name3, 
+             caption="P-values for Lower Significance")
+```
+And as expected, none of the probe groups had p-values that were more extreme for either the upper or lower significant levels. 
+
+The three different p-value tables were created using different methods of computing, with the time it took to run the 1000 permutations shown below.
+The first was run in a regular loop and will be used as a benchmark for the other two.
+
+```{r, echo = FALSE}
+time_1
+```
+The second was run with parallel computing using mclapply. Unfortunately Windows computers do not have the ability to use multiple cores in the way that R would like, so the timing is similar to the first run.
+
+```{r, echo = FALSE}
+time_2
+```
+The third was run with parallel computing using future to create multiple R sessions. Two sessions were used, so it makes sense that the elapsed time was cut in half.
+
+```{r, echo = FALSE}
+time_3
+```
+
+Overall parallel computing allows R code to run dramatically faster. This can be useful if code is expected to take long periods of time to run, since parallel computing may cut the expected time by a factor of cores and session available.

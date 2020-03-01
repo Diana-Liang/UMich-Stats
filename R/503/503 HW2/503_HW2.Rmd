@@ -1,0 +1,245 @@
+---
+title: "hw#2"
+author: "Diana Liang"
+date: "2/16/2020"
+output:
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Wine Dataset
+```{r, include = FALSE}
+# Load Data
+wine_train <- readr::read_csv("wine_train.csv")
+wine_train$Type <- as.factor(wine_train$Type)
+wine_test <- readr::read_csv("wine_test.csv")
+wine_test$Type <- as.factor(wine_test$Type)
+```
+
+## a) Explore the data
+
+```{r, echo = FALSE}
+par(mfrow=c(2,2))
+plot(wine_train$Type, wine_train$Alcohol, main = "Wine Alcohol vs Type", 
+     ylab = "Alcohol")
+plot(wine_train$Type, wine_train$Malic, main = "Wine Malic vs Type", 
+     ylab = "Malic")
+plot(wine_train$Type, wine_train$Ash, main = "Wine Ash vs Type", 
+     ylab = "Ash")
+plot(wine_train$Type, wine_train$Alcalinity, main = "Wine Alcalinity vs Type", 
+     ylab = "Alcalinity")
+
+par(mfrow=c(2,2))
+plot(wine_train$Type, wine_train$Magnesium, main = "Wine Magnesium vs Type", 
+     ylab = "Magnesium")
+plot(wine_train$Type, wine_train$Phenols, main = "Wine Phenols vs Type", 
+     ylab = "Phenols")
+plot(wine_train$Type, wine_train$Flavanoids, main = "Wine Flavanoids vs Type", 
+     ylab = "Flavanoids")
+plot(wine_train$Type, wine_train$Nonflavanoids, main = "Wine Nonflavanoids vs Type", 
+     ylab = "Nonflavanoids")
+
+par(mfrow=c(2,2))
+plot(wine_train$Type, wine_train$Proanthocyanins, main = "Wine Proanthocyanins vs Type", 
+     ylab = "Proanthocyanins")
+plot(wine_train$Type, wine_train$Color, main = "Wine Color vs Type", 
+     ylab = "Color")
+plot(wine_train$Type, wine_train$Hue, main = "Wine Hue vs Type", 
+     ylab = "Hue")
+plot(wine_train$Type, wine_train$Dilution, main = "Wine Dilution vs Type", 
+     ylab = "Dilution")
+plot(wine_train$Type, wine_train$Proline, main = "Wine Proline vs Type", 
+     ylab = "Proline")
+```
+
+The most useful variables in predicting Type would have distinct values amongst the different Types. Alcohol, phenols, and flavanoids are almost entirely distinct between the 3 different wine Types and would be the most useful. Nonflavanoids, proanthocyanins, and proline have some overlap between the different Types but are still better than the remaining variables.
+
+## b) LDA, QDA, Naive Bayes
+
+```{r}
+# Load libraries
+library(MASS)
+library(e1071)
+
+# LDA
+wine_lda = lda(Type~., data=wine_train)
+lda_test_pred = predict(wine_lda, wine_test)$class
+lda_test_err = mean(lda_test_pred != wine_test$Type)
+
+# QDA
+wine_qda = qda(Type~., data=wine_train)
+qda_test_pred = predict(wine_qda, wine_test)$class
+qda_test_err = mean(qda_test_pred != wine_test$Type)
+
+# Naive Bayes
+wine_nb = naiveBayes(Type~., data=wine_train)
+nb_test_pred = predict(wine_nb, newdata = wine_test)
+nb_test_err = mean(nb_test_pred != wine_test$Type)
+```
+```{r, echo=FALSE}
+sprintf("LDA test error: %0.3f", lda_test_err)
+sprintf("QDA test error: %0.3f", qda_test_err)
+sprintf("Naive Bayes test error: %0.3f", nb_test_err)
+```
+
+LDA provided the lowest test error of the 3 models while QDA and Naive Bayes provided similar test errors.
+
+# 2. KNN of Theft Dataset
+
+```{r, include = FALSE}
+# Load library and data
+library(class)
+library(ggplot2)
+library(tidyr)
+theft_train <- readr::read_csv("theft_train.csv")
+theft_test <- readr::read_csv("theft_test.csv")
+```
+```{r}
+# K-fold CV for KNN
+knn_cv_err <- function(cv_folds, knn_k, train, train_label){
+        obs = nrow(train)
+        fold_size = floor(obs/cv_folds)
+        cv_error = rep(0, cv_folds)
+        for(i in 1:cv_folds){
+                # choose indices for this fold
+                if(i != cv_folds){
+                        cv_test_id = ((i-1)*fold_size + 1):(i*fold_size)
+                } else{
+                        cv_test_id = ((i-1)*fold_size + 1):obs
+                }
+                
+                # create cv train and test for this fold
+                cv_train = train[-cv_test_id,]
+                cv_test = train[cv_test_id,]
+                
+                # standardize
+                avg = colMeans(cv_train); sd = apply(cv_train,2,sd)
+                cv_train = scale(cv_train, center = avg, scale = sd)
+                cv_test = scale(cv_test, center = avg, scale = sd)
+                
+                # run KNN and find cv error
+                pred = knn(cv_train, cv_test, train_label[-cv_test_id], k = knn_k)
+                cv_error[i] = mean(pred != train_label[cv_test_id])
+        }
+        return(mean(cv_error))
+}
+```
+
+The training error and test error will be calculated for each value of K, which spans 1 to 100. The CV error will also be calculated using the above function. These error values are plotted below.
+
+```{r}
+set.seed(1)
+# make list of K's
+K = 1:100
+
+# set up training error
+train_err = rep(0, 100)
+avg = colMeans(theft_train[,-3])
+sd = apply(theft_train[,-3],2,sd)
+std_train = scale(theft_train[,-3], center = avg, scale = sd)
+std_test = scale(theft_test[,-3], center = avg, scale = sd)
+
+# set up test error
+test_err = rep(0, 100)
+
+# set up cv error
+cv_err = rep(0, 100)
+
+# go through values of K
+for(i in 1:100){
+        pred_train = knn(std_train, std_train,  theft_train$theft, K[i])
+        train_err[i] = mean(pred_train != theft_train$theft)
+        pred_test = knn(std_train, std_test,  theft_train$theft, K[i])
+        test_err[i] = mean(pred_test != theft_test$theft)
+        cv_err[i] = knn_cv_err(10, K[i], theft_train[,-3], theft_train$theft)
+}
+
+theft_err <- data.frame(K, train_err, cv_err, test_err)
+theft_err <- gather(theft_err, key, value, train_err, cv_err, test_err)
+ggplot(theft_err, aes(x = K, y = value, color = key)) +
+  geom_line() + ylab("Error Rate") + xlab("K") +
+  ggtitle("Train, CV, and Test error of KNN for Values of K") +
+  theme_minimal()
+```
+
+The best model would be the one with the lowest CV error, so the K that gives the KNN model with the lowest CV error is:
+
+```{r}
+theft_err[which.min(theft_err$cv_err),]
+```
+
+# 3. Weekly Dataset
+
+```{r, include = FALSE}
+# Load dataset
+library(ISLR)
+weekly_data = Weekly
+```
+
+## a) Logistic Regression Model to Predict Direction
+
+```{r}
+part_a = glm(Direction ~ Lag1 + Lag2, data = weekly_data, 
+       family = binomial)
+summary(part_a)
+```
+
+Both Lag1 and Lag2 seem to have little effect on Direction, but Lag1 does not seem to be significant at a = 0.05 while Lag2 is. Lag1 also influences Direction in the opposite manner as Lag2: greater Lag1 makes the "Up" direction more likely while greater Lag2 makes the "Down" direction more likely.
+
+## b) Log Reg Model for Direction but not the first obs
+
+```{r}
+b_data = weekly_data[-1, ]
+part_b = glm(Direction ~ Lag1 + Lag2, data = b_data, 
+       family = binomial)
+summary(part_b)
+```
+
+This model without the first observation is almost identical to the original.
+
+## c) Predict first obs
+
+```{r}
+pred_obs = predict(part_b, weekly_data[1, -1])
+pred_p = binomial()$linkinv(pred_obs)
+pred_p
+if (pred_p > 0.5){ pred_label = "Up" } else{ pred_label = "Down"}
+first_obs <- data.frame(Predicted = pred_label,
+                        Actual = weekly_data[1, 9])
+first_obs
+```
+
+The observation was not correctly classified.
+
+## d) LOOCV
+
+```{r}
+obs = nrow(weekly_data)
+loocv_test_err = rep(0, obs)
+for(i in 1:obs){
+        temp = glm(Direction ~ Lag1 + Lag2, data = weekly_data[-i,], family = binomial)
+        pred_obs = predict(temp, weekly_data[i, -1])
+        pred_p = binomial()$linkinv(pred_obs)
+        if(pred_p > 0.5){ 
+                pred_label = "Up"
+        } else{ 
+                pred_label = "Down"
+        }
+        if(pred_label != weekly_data[i, 9]){
+                loocv_test_err[i] = 1
+        } else{
+                loocv_test_err[i] = 0
+        }
+}
+```
+
+## e) LOOCV test error
+
+```{r}
+mean(loocv_test_err)
+```
+
+The test error is incredibly high, in which almost half of the observations were predicted to have the wrong Direction label. This means Lag1 and Lag2 are not the best variables to predict Direction.

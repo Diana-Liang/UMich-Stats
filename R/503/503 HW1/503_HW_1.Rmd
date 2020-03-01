@@ -1,0 +1,121 @@
+---
+title: "503: HW #1"
+author: "Diana Liang"
+date: "1/30/2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Part 1: Flexible Method: Better or Worse
+
+For K-nearest neighbors (KNN) as a classification model, the decision of how many neighbors to consider (K) is important. Choosing a lower number (ex. K = 5) can make the model more flexible while choosing a higher number (ex. K = 100) can make the model more inflexible.
+
+Different circumstances will determine whether a flexible method will be better or worse than an inflexible method.
+
+# A) Large Sample Size, Few Predictors
+In this case, a flexible method would be better since there is more information on the actual distribution of classes, and the flexible method would yield lower train error.
+
+# B) Many Predictors, Few Observations
+In this case, a flexible method would be worse since there is not much information on the actual distribution of the classes, and a more flexible method would fit more closely to the train data to be able to account for new data. 
+
+# C) Non-linear Relationship between Predictors and Response
+In this case, a flexible method would be better since it would allow the model to fit in a more irregular shape to accomodate the non-linear relationship.
+
+# D) High Variance of Error
+In this case, a flexible method would be worse since overall variance increases with increased flexibility. There is already greater variance due to the high variance of error terms, so decreasing variance through decreasing flexibility would be preferable.
+
+
+
+## Part 2: KNN for diabetes Dataset
+
+The following code uses KNN to model the Outcome of the diabetes data based on its other variables. The train data was cleaned by getting rid of any observations were zero for Glucose, BloodPressure, and BMI since those values should be greater than zero for a human to be alive. The variables Insulin and SkinThickness were removed from both the train and test data entirely since so too many observations were removed since most of the Insulin and SkinThickness values were zero.
+
+```{r}
+
+# Load packages
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(class)
+
+# Load the data
+train_og <- readr::read_csv("diabetes_train.csv")
+test_og <- readr::read_csv("diabetes_test.csv")
+
+# Clean up data
+train_og <- train_og %>%
+  select(-c(Insulin, SkinThickness)) %>%
+  filter(Glucose > 0, BloodPressure > 0, BMI > 0)
+
+test_og <- test_og %>%
+  select(-c(Insulin, SkinThickness))
+
+# Get rid of Outcome Column
+train <- train_og %>%
+  select(-Outcome)
+
+test <- test_og %>%
+  select(-Outcome) 
+
+# Calculate mean and std to standardize variables
+means <- colMeans(train)
+stds = sqrt(diag(var(train)))
+
+train_x <- scale(train, center = means, scale = stds)
+test_x <- scale(test, center = means, scale = stds)
+
+# Run KNN for k=1:20
+## Set up k and empty error vectors
+k_val = c(1:20)
+train_err = c()
+test_err = c()
+
+## Run KNN for each value of k
+for(i in 1:20){
+  ## Calc error in predicting Outcome for train
+  pred_train <- knn(train_x, train_x, 
+                    train_og$Outcome, 
+                    k = k_val[i])
+  train_err[i] = mean(pred_train != train_og$Outcome)
+  ## Calc error in predicting Outcome for test
+  pred_test = knn(train_x,test_x, 
+                  train_og$Outcome, 
+                  k = k_val[i])
+  test_err[i] = mean(pred_test != test_og$Outcome)
+}
+
+# Plot the errors against K
+errors = data.frame(train_err, test_err, k_val)
+ggplot(errors, aes(x = k_val)) + 
+  geom_line(aes(y = train_err), linetype = "longdash") + 
+  geom_point(aes(y = train_err), shape = 1) +
+  geom_line(aes(y = test_err), linetype = "solid") + 
+  geom_point(aes(y = test_err), shape = 16) +
+  ylab("Error Rate") + xlab("K") + 
+  ggtitle("Train and Test error of KNN for Values of K") +
+  theme_minimal()
+```
+
+Here is the train error for K = 1 to K = 20 in order of increasing K values:
+
+```{r}
+train_err
+```
+
+Here is the test error for K = 1 to K = 20 in order of increasing K values:
+
+```{r}
+test_err
+```
+
+While both train and test error were plotted and displayed, minimizing test error is more important than minimizing train error since the main objective is to find the model that best fits new data. The K with the lowest test error is shown below: 
+
+```{r}
+# Returns K with the lowest test error
+k_val[which.min(test_err)]
+```
+
+Interestingly, the best K value changes by iteration. This could be due to the K values being very close together which leads to many of the models having similar train and test errors. Usually the K values tests would be at different magnitudes so that a greater range of models can be tested. In this case, any of the models with K = 5 to K = 12 could possibly be the model with the lowest test error and, thus, the best fitting model.

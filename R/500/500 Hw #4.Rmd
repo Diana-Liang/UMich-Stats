@@ -1,0 +1,81 @@
+---
+title: "500 HW#4"
+author: "Diana Liang"
+date: "10/27/2019"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(faraway)
+data(longley)
+```
+
+Full Model
+```{r, echo = FALSE}
+full <- lm(Employed ~ GNP.deflator + GNP + Unemployed + Armed.Forces + Population + Year, longley)
+summary(full)
+
+#scaled <- data.frame(scale(longley))
+#df <- lm(Employed ~ GNP.deflator + GNP + Unemployed + Armed.Forces + #Population + Year, scaled)
+#summary(df)
+```
+
+Condition Numbers
+```{r, echo = FALSE}
+X <- model.matrix(full)[,-1]
+e <- eigen(t(X) %*% X)
+#e$val
+round(sqrt(e$val[1]/e$val), 3)
+
+#X <- model.matrix(df)[,-1] # scaled; all except intercept
+#e <- eigen(t(X) %*% X)
+#e$val
+#round(sqrt(e$val[1]/e$val), 3)
+```
+
+Varation in predictors is 5000 times bigger between the largest and smallest variation. This means that some of the eigenvalues for the (X transpose)*X are, relatively, very small and that some of the predictor variables are collinear.
+
+Correlation btwn predictors
+```{r, echo = FALSE}
+round(cor(longley)[1:6, 1:6], 2)
+```
+
+GNP deflator, GNP, Population and Year predictor variables have a correlation of nearly 1, meaning that they are most likely collinear. These variables should be condensed down to one predictor variable.
+
+
+Variance inflation factors
+```{r, echo = FALSE}
+round(vif(X), 3)
+```
+
+GNP.deflator, GNP, Population and Year predictor variables had intensely greater variance inflation factors compared to Unemployed and Armed.Forces, meaning that those 4 variables are very highly correlated. 
+
+
+Reduced Model
+```{r, echo = FALSE}
+reduced <- lm(Employed ~ GNP.deflator + Unemployed + Armed.Forces, longley)
+summary(reduced)
+```
+
+The full model showed that the predictor variables Unemployed, Armed.Forces, and Year were significant, with a significance level of 0.05, in modelling the response variable Employed. The reduced model now only has predictor variables GNP.deflator and Unemployed as significant in modeeling Employed.
+
+
+Reduced Model Condition Numbers
+```{r, echo = FALSE}
+X_red <- model.matrix(reduced)[,-1]
+e_red <- eigen(t(X_red) %*% X_red)
+#e_red$val
+round(sqrt(e_red$val[1]/e_red$val), 3)
+```
+
+The reduced model shows relatively low eigenvalues for the remaining predictor variables, so there is little evidence of collinearity between them.
+
+Reduced Model Variance Inflation Factors
+```{r, echo = FALSE}
+round(vif(X_red), 3)
+```
+
+The variance inflation factors are very similar and quite, which confirms there is little correlation between the remaining predictor variables.

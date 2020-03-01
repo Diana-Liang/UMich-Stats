@@ -1,0 +1,156 @@
+---
+title: "500 HW3"
+author: "Diana Liang"
+date: "10/9/2019"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup}
+
+library(faraway)
+data("sat")
+
+#A1: sat lm model
+sat_model = lm(total ~ takers + ratio + salary, data = sat)
+summary(sat_model)
+
+#A2: salary t test
+salary_tvalue = 2.541
+salary_pvalue = 1-pt(2.541, df = 46)
+cat("Salary T-Test Statistic:", salary_tvalue, 
+    "\n", "Salary P-Value:",salary_pvalue)
+
+#A3: ratio t test
+ratio_tvalue = -2.187
+ratio_pvalue = 2 *(pt(ratio_tvalue, df=46))
+cat("Ratio T-Test Statistic:", ratio_tvalue, "\n",
+    "Ratio P-Value:", ratio_pvalue)
+
+#A4: sat f test
+cat("\n")
+cat("SAT data F-Test Statistic: 71.72", 
+    "\n", "SAT data P-Value: 0")
+
+#A5: salary 95 and 99 ci
+salary_conf95 = confint(sat_model, "salary", level = 0.95)
+salary_conf95
+salary_conf99 = confint(sat_model, "salary", level = 0.99)
+salary_conf99
+
+#A6: joint 95 ci
+library(ellipse)
+plot(ellipse(sat_model, c('ratio', 'salary')), main = "95% Joint Confidence Region for Ratio and Salary", 
+     type = "l")
+points(0,0, pch=1)
+#A6: F test for a pair
+ho_6 = lm(total ~ takers, sat)
+hoa_6 = lm(total ~takers + ratio + salary, sat)
+anova(ho_6, hoa_6)
+
+#A7: sat lm now with expend
+sat_model7 = lm(total ~ takers + ratio + salary + expend, sat)
+summary(sat_model7)
+
+#A8: f test for pair salary, expend, ratio
+ho_8 = lm(total ~ takers, sat)
+hoa_8 = lm(total ~ takers + ratio + salary + expend, sat)
+anova(ho_8, hoa_8)
+```
+
+```{r}
+data(teengamb)
+teengamb$sex = factor(teengamb$sex)
+levels(teengamb$sex) = c("Male", "Female")
+gamb_model = lm(gamble ~ sex + status + income + verbal, teengamb)
+summary(gamb_model)
+gamb_model_s = lm(sqrt(gamble) ~ sex + status + income + verbal, teengamb)
+summary(gamb_model_s)
+
+#B1: constant variance
+plot(gamb_model$fitted, gamb_model$residuals, main = "Fitted Gamble Expenditure vs Residuals",
+     xlab = "Fitted", ylab = "Residuals")
+summary(lm(abs(gamb_model$residuals) ~ gamb_model$fitted))
+plot(gamb_model_s$fitted, gamb_model_s$residuals,
+     main = "Fitted Sqrt Gamble Expenditures vs Residuals", xlab = "Fitted", ylab = "Residuals")
+summary(lm(abs(gamb_model_s$residuals) ~ gamb_model_s$fitted))
+
+#B2: normality
+qqnorm(gamb_model_s$residuals, main= "Residual Normality", ylab = "Residuals")
+qqline(gamb_model_s$residuals)
+shapiro.test(gamb_model_s$residuals)
+
+#B3: leverage points
+halfnorm(lm.influence(gamb_model_s)$hat, nlab = 4, main = "High Leverage Points", ylab = "Leverages")
+lm.influence(gamb_model_s)$hat[lm.influence(gamb_model_s)$hat>(2*(4+1)/47)]
+
+#B4: outliers
+outlie = rstudent(gamb_model_s)
+m = max(abs(outlie))
+which(outlie == m)
+p_val=2*(1-pt(m, df = 47-5-1))
+Bonf_alpha=0.05/47
+cat("Point with Max Studentized RS:", which(outlie == m),
+    "\n", "P-value for Possible Outlier:", p_val,
+    "\n", "Corrected Significance Level:", Bonf_alpha)
+
+#B5: influential
+cook = cooks.distance(gamb_model_s)
+halfnorm(cook, nlab = 4, main = "Influential Points", ylab = "Cook's Distance")
+gamb_mod_24 = lm(sqrt(gamble) ~ sex + status + income + verbal, data = teengamb, subset = (cook < max(cook)))
+summary(gamb_mod_24)
+
+gamb_model_s_inf = lm.influence(gamb_model_s)
+
+plot(gamb_model_s_inf$coef[,3], gamb_model_s_inf$coef[,5],
+     main = "Change in betas Status and Verbal", xlab = "Change in beta Status", ylab = "Change in beta Verbal")
+identify(gamb_model_s_inf$coef[,3], gamb_model_s_inf$coef[,5])
+
+plot(gamb_model_s_inf$coef[,3], gamb_model_s_inf$coef[,4],
+     main = "Change in betas Status and Income", xlab = "Change in beta Status", ylab = "Change in beta Income")
+identify(gamb_model_s_inf$coef[,3], gamb_model_s_inf$coef[,4])
+
+plot(gamb_model_s_inf$coef[,4], gamb_model_s_inf$coef[,5],
+     main = "Change in betas Income and Verbal", xlab = "Change in beta Income", ylab = "Change in beta Verbal")
+identify(gamb_model_s_inf$coef[,4], gamb_model_s_inf$coef[,5])
+
+# B6: structure of relationship
+# Partial regression plot
+delta <- residuals(lm(sqrt(gamble) ~ sex + income + verbal, teengamb))
+gamma <- residuals(lm(status ~ sex + income + verbal, teengamb))
+plot(gamma, delta, main = "Partial Regression for Status", xlab = "Status Residuals", ylab = "Sqrt Gamble Residuals")
+temp <- lm(delta~gamma)
+abline(reg = temp)
+identify(gamma,delta)
+
+delta <- residuals(lm(sqrt(gamble) ~ sex + status + verbal, teengamb))
+gamma <- residuals(lm(income ~ sex + status + verbal, teengamb))
+plot(gamma, delta, main = "Partial Regression for Income", xlab = "Income Residuals", ylab = "Sqrt Gamble Residuals")
+temp <- lm(delta~gamma)
+abline(reg = temp)
+identify(gamma,delta)
+
+delta <- residuals(lm(sqrt(gamble) ~ sex + income + status, teengamb))
+gamma <- residuals(lm(verbal ~ sex + income + status, teengamb))
+plot(gamma, delta, main = "Partial Regression for Verbal", xlab = "Verbal Residuals", ylab = "Sqrt Gamble Residuals")
+temp <- lm(delta~gamma)
+abline(reg = temp)
+identify(gamma,delta)
+
+
+# Partial residual plot
+plot(teengamb$status, gamb_model_s$residuals +
+         coef(gamb_model_s)['status']*teengamb$status, main = "Partial Residual for Status",
+     xlab="Status", ylab= "Sqrt Gamble (adjusted)")
+abline(a=0, b=coef(gamb_model_s)['status'])
+
+plot(teengamb$income, gamb_model_s$residuals +
+         coef(gamb_model_s)['income']*teengamb$income, main = "Partial Residual for Income",
+     xlab="Income", ylab= "Sqrt Gamble (adjusted)")
+abline(a=0, b=coef(gamb_model_s)['income'])
+
+plot(teengamb$verbal, gamb_model_s$residuals +
+         coef(gamb_model_s)['verbal']*teengamb$verbal, main = "Partial Residual for Verbal",
+     xlab="Verbal", ylab= "Sqrt Gamble (adjusted)")
+abline(a=0, b=coef(gamb_model_s)['verbal'])

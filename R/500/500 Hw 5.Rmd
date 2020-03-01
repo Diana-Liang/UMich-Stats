@@ -1,0 +1,77 @@
+---
+title: "HW 5"
+author: "Diana Liang"
+date: "11/8/2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(quantreg)
+library(MASS)
+library(leaps)
+library(faraway)
+```
+
+Part 1: Different Models for Robust Regression
+```{r, echo= FALSE}
+#ols
+ols <- lm(total~takers+ratio+salary+expend, data=sat)
+summary(ols)
+```
+Only a few significant
+
+```{r, echo= FALSE}
+#least deviations
+lad <- rq(total~takers+ratio+salary+expend, data=sat)
+summary(lad)
+```
+What even is significant
+
+```{r, echo= FALSE}
+#huber's
+hrr <- rlm(total~takers+ratio+salary+expend, data=sat)
+summary(hrr)
+```
+
+
+Part 2: Different Methods for Variable Selection
+```{r, echo=FALSE}
+#backward elimination
+be <- lm(lpsa~.,data=prostate)
+be <- update(be, .~.- gleason)
+be <- update(be, .~.- lcp)
+be <- update(be, .~.- pgg45)
+be <- update(be, .~.- age)
+be <- update(be, .~.- lbph)
+summary(be)
+```
+Some commentary on the fit and significance
+
+
+```{r, echo= FALSE}
+#adjusted r^2
+adj <- regsubsets(lpsa~.,data=prostate)
+sum <- summary(adj)
+sum
+```
+Summary for Adjusted R^2 and Mallows Cp
+
+```{r, echo= FALSE}
+adj_num <- which.max(sum$adjr2)
+plot(2:9, sum$adjr2, xlab = "Number of Parameters", ylab = "Adjusted Rsq")
+cat("Adjusted R^2:", adj_num, "\n")
+one <- lm(lpsa~.-gleason, data = prostate)
+summary(one)
+```
+Parameters of interest: everything except gleason
+
+```{r, echo= FALSE}
+#mallows
+mal_num <- which.min(sum$cp)
+plot(2:9, sum$cp, xlab = "Number of Parameters", ylab = "Cp")
+cat("Mallows Cp:", mal_num, "\n")
+second <- lm(lpsa~lcavol+lweight+lbph+svi, data=prostate)
+summary(second)
+```
+Parameters of interest: lcavol, lweightm lbph, svi

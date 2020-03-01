@@ -1,0 +1,116 @@
+---
+title: "Stats 506: PS4 Analysis with Stata"
+author: "Diana Liang"
+date: "11/15/2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+library(tidyr)
+library(dplyr)
+
+ps4_q1_table <- 
+  readr::read_csv("~/2019/UMich/Fall 2019/Stats 506/PS4/ps4_q1_csv.csv")
+ps4_q2_table <- 
+  readr::read_csv("~/2019/UMich/Fall 2019/Stats 506/PS4/ps4_q2_table.csv")
+ps4_q3c_table <- 
+  readr::read_csv("~/2019/UMich/Fall 2019/Stats 506/PS4/ps4_q3_partc_csv.csv")
+ps4_q3d_table <- 
+  readr::read_csv("~/2019/UMich/Fall 2019/Stats 506/PS4/ps4_q3_partd_csv.csv")
+
+source("~/2019/UMich/Fall 2019/Stats 506/PS2/ps2_q1_funcs.R")
+```
+Stata as a statistical tool requires a different methodology compared to its contempories such as R and Python. The main difference is the use of a single data set at a time. While this feature may seem like a restriction, Stata can still perform many of the same analysis techniques tauted by other programs and, often, without a deep understanding of the underlying coding. Below are three various analyses that demonstrate Stata's utility.
+
+
+Part 1: Mouse-Tracking Mixed Models
+
+Previously R was used to analyze mouse-tracking data that would add numeric understanding to mouse movements for an experimental task. The table below was reproduced using Stata instead of R using the same data.
+
+```{r, echo=FALSE}
+## Reorganize Q1 data
+table1 <- ps4_q1_table %>%
+  transmute(curve_measure,
+            coef = sprintf("%4.2f (%4.2f, %4.2f)", coeff, lwr, upr),
+            st_err)
+## Create table
+col_name1 <- c("Curvature Measure", "Coefficient", "Standard Error")
+knitr::kable(table1, col.names=col_name1, 
+             caption="Mixed Model Coefficients for Effect of Condition on Log of Curvature Measures")
+```
+
+
+Part 2: 2015 RECS Homes with Internet
+
+Once again the 2015 RECS data was used to analyze the proportion of houses in each census division and area type that had internet access. The data was also ordered to find the division with the greatest disparity of proportions between the urban and rural areas.
+
+```{r, echo=FALSE}
+## Reorganize Q2 data
+table2 <- ps4_q2_table %>%
+  transmute(division = sapply(division, decode_cen_div),
+            diff_n = diff_n*100, lwr_diff = lwr_diff*100, upr_diff = upr_diff*100,
+            uprop_n = uprop_n*100, lwr_u = lwr_u*100, upr_u = upr_u*100,
+            rprop_n = rprop_n*100, lwr_r = lwr_r*100, upr_r = upr_r*100) %>%
+  arrange(desc(diff_n)) %>%
+  transmute(division,
+            diff_n = sprintf("%4.2f (%4.2f, %4.2f)",
+                             diff_n, lwr_diff, upr_diff),
+            urban_prop = sprintf("%4.2f (%4.2f, %4.2f)",
+                              uprop_n, lwr_u, upr_u),
+            rural_prop = sprintf("%4.2f (%4.2f, %4.2f)",
+                              rprop_n, lwr_r, upr_r))
+
+## Create table
+col_name2 <- c("Division", "Disparity in Prop", "Urban Prop", "Rural Prop")
+knitr::kable(table2, col.names=col_name2, 
+             caption="Disparity of Prop of Homes with Internet between Urban and Rural Areas")
+```
+
+As shown above, Mountain South had the greatest disparity of internet proportion between urban and rural areas. Almost all of the division, except South Atlantic, seemed to have greater proportions of internet access in urban areas compared to rural areas, but many of the confidence intervals contain 0 or negative proportions so that may not hold true.
+
+
+Part 3: Logistic Models for Drinking Water
+
+The last analysis deals with CDC National Health and Nutrition Examination Survey (NHANES) for 2005-2006. The focus was on how the day of water intake affected the likelyhood to drink water, specifically whether that day was during the weekday or the weekend. Other variables such as season (winter), age, and economic status (pir) were controlled for to make the final analysis more true to the actual effect. The data was cleaned and reorganized in Stata to achieve the necessary conditions for a logistic model, the summaries of two are shown below.
+
+Logistic Model
+
+Only one of the two days was used for analysis to control for the possibility of two data points for each respondent, so a mixed model was not necessary. The odds ratios are listed below but the coefficients are also listed as a more direct way to compare the two models.
+
+```{r, echo=FALSE}
+## Reorganize the logistic model summary table
+table3 <- ps4_q3c_table %>%
+  transmute(Variable,
+            odds_ratio = sprintf("%4.2f (%4.2f, %4.2f)",
+                                 Odds_Ratio, OR_lwr, OR_upr),
+            log_coef = sprintf("%4.2f (%4.2f, %4.2f)",
+                               Log_Coeff, L_lwr, L_upr),
+            marginal = sprintf("%4.2f (%4.2f, %4.2f)",
+                               Marginal, M_lwr, M_upr))
+
+## Create table
+col_name3 <- c("Indep. Variable", "Odds Ratio", "Log Coefficient", "Marginal Effect")
+knitr::kable(table3, col.names=col_name3, 
+             caption="Summary Table for Logistics Model")
+```
+
+Mixed Logistics Model
+
+This mixed model included both possible days for each respondant and used the respondant variable as a random intercept. Unfortunately, this model does not automatically output odds ratios, so the coefficients will be used as a way to compare the two models.
+
+```{r, echo=FALSE}
+## Reorganize the mixed logistics model summary table
+table4 <- ps4_q3d_table %>%
+  transmute(Variable,
+            log_coef = sprintf("%4.2f (%4.2f, %4.2f)",
+                               Coef, Lwr, Upr),
+            marginal = sprintf("%4.2f (%4.2f, %4.2f)",
+                               Marginal, M_lwr, M_upr))
+
+## Create table
+col_name4 <- c("Indep. Variable", "Log Coefficient", "Marginal Effect")
+knitr::kable(table4, col.names=col_name4, 
+             caption="Summary Table for Mixed Logistics Model")
+```
+
+Looking at the logistic coefficients and marginal effects for weekday, the original logistic model and the mixed logistic model do not differ enough to say that they provide different conclusions. The confidence intervals of the corresponding coefficients definitely include the coefficients of the other model and almost overlap between the models. 
