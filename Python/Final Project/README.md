@@ -5,4 +5,4 @@
 4. LR: logistic regression analysis
 5. Random Forests: random forest analysis
 6. Simpler MLP: multilayer perceptron analysis of 2 category health
-7. Simplr RF: random forest analysis of 2 category health
+7. Simpler RF: random forest analysis of 2 category health
