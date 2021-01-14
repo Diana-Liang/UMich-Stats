@@ -1,4 +1,4 @@
-# Python: Work from Data Science and Analytics using Python Course
+# Stats 507
 
 ## 1. Homeworks 1-8
 - Homework 1: Simple functions; While/For loops; If/Else Statements
