@@ -1,0 +1,172 @@
+---
+title: "503 HW 5 Part 2b"
+author: "Diana Liang"
+date: "4/2/2020"
+output: word_document
+---
+
+```{r}
+#install.packages('devtools')
+#devtools::install_github("rstudio/keras")
+#devtools::install_github("rstudio/tensorflow")
+#library(tensorflow)
+#install_tensorflow(version = "1.12")
+
+#library(keras)
+#install_keras()
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(keras)
+load("mnist.Rdata")
+objects()
+
+```
+
+```{r}
+dim(x_train)
+```
+
+```{r}
+y_train[1:20]
+```
+
+```{r}
+par(mfcol=c(5,5))
+par(mar=c(0, 0, 1.5, 0), xaxs='i', yaxs='i')
+for (i in 1:25) { 
+  img <- x_train[i, , ]
+  img <- t(apply(img, 2, rev)) 
+  image(1:28, 1:28, img, col = gray((0:255)/255), xaxt = 'n', yaxt = 'n',
+        main = paste(y_train[i]))
+}
+```
+
+```{r}
+#loss <- c()
+#accuracy <- c()
+#for(unit in c(128, 256, 384)){
+#  for(ep in c(10, 30, 50)){
+#    for(bsize in c(16, 32, 64)){
+#model <- keras_model_sequential()
+#model %>%
+#  layer_flatten(input_shape = c(28, 28)) %>%
+#  layer_dense(units = unit, activation = 'relu') %>%
+#  layer_dense(units = 10, activation = 'softmax') %>% compile(
+#  optimizer = 'adam', 
+#  loss = 'sparse_categorical_crossentropy',
+#  metrics = c('accuracy')
+#)
+#valid = sample(dim(x_train)[1], floor(dim(x_train)[1]*0.1), replace = FALSE)
+#NN_model = model %>% fit(x_train[-valid, , ], y_train[-valid], epochs = ep, validation_split = 0.2, batch_size = bsize)
+#score <- model %>% evaluate(x_train[valid, , ], y_train[valid])
+#loss <- cbind(loss, score$loss)
+#accuracy <- cbind(accuracy, score$accuracy)
+#    }
+#  }
+#}
+#plot(as.vector(accuracy))
+#plot(as.vector(loss))
+```
+
+```{r}
+mlp_model <- keras_model_sequential()
+mlp_model %>%
+  layer_flatten(input_shape = c(28, 28)) %>%
+  layer_dense(units = 286, activation = 'relu') %>%
+  layer_dense(units = 10, activation = 'softmax') %>% compile(
+  optimizer = 'adam', 
+  loss = 'sparse_categorical_crossentropy',
+  metrics = c('accuracy')
+)
+mlp_m = mlp_model %>% fit(x_train, y_train, epochs = 30, validation_split = 0.2, batch_size = 64)
+
+plot(mlp_m) + theme_minimal()
+
+mlp_score <- mlp_model %>% evaluate(x_test, y_test)
+nn_df <- data.frame(model_type = "MLP",
+                    val_accuracy = mlp_m$metrics$val_accuracy[30],
+                    test_accuracy = mlp_score$accuracy)
+```
+
+```{r}
+#loss = c()
+#accuracy = c()
+#for(k in c(3,4)){
+#  for(act in c("relu", "sigmoid", "tanh")){
+#    for(drop in c(0.25, 0.40)){
+#      model <- keras_model_sequential()
+#model %>%  
+#layer_conv_2d(filter=32,kernel_size=c(k,k),padding="same",input_shape=c(28,28, 1) ) %>%  layer_activation(act) %>%  
+#layer_max_pooling_2d(pool_size=c(2,2)) %>% 
+#layer_conv_2d(filter=32,kernel_size=c(k,k))  %>%  #layer_activation(act) %>%
+#layer_max_pooling_2d(pool_size=c(2,2)) %>%  
+#layer_dropout(drop) %>%
+#layer_flatten() %>%  
+#layer_dense(64) %>%  
+#layer_activation(act) %>%  
+#layer_dropout(drop*2) %>%  
+#layer_dense(10) %>%  
+#layer_activation("softmax")
+
+#valid = sample(dim(x_train)[1], floor(dim(x_train)[1]*0.1), replace = FALSE)
+               
+#cnn_xtraining = array(x_train[-valid, ,], dim = c(dim(x_train[-valid, ,])[1], dim(x_train[-valid, ,])[2], dim(x_train[-valid, ,])[3], 1))
+#cnn_xvalid = array(x_train[valid, ,], dim = c(dim(x_train[valid, ,])[1], dim(x_train[valid, ,])[2], dim(x_train[valid, ,])[3], 1))
+
+#model %>% compile(
+#  optimizer = 'adam', 
+#  loss = 'sparse_categorical_crossentropy',
+#  metrics = c('accuracy')
+#)
+
+#cnn_model = model %>% fit(cnn_xtraining, y_train[-valid], epochs = 30, validation_split = 0.2, batch_size = 32)
+
+#score <- model %>% evaluate(cnn_xvalid, y_train[valid])
+#loss <- cbind(loss, score$loss)
+#accuracy <- cbind(accuracy, score$accuracy)
+#    }
+#  }
+#}
+#plot(as.vector(accuracy))
+#plot(as.vector(loss))
+```
+
+```{r}
+cnn_model <- keras_model_sequential()
+cnn_model %>%  
+layer_conv_2d(filter=32,kernel_size=c(4,4),padding="same",input_shape=c(28,28, 1) ) %>%  layer_activation("sigmoid") %>%  
+layer_max_pooling_2d(pool_size=c(2,2)) %>% 
+layer_conv_2d(filter=32,kernel_size=c(4,4))  %>%  layer_activation("sigmoid") %>%
+layer_max_pooling_2d(pool_size=c(2,2)) %>%  
+layer_dropout(0.25) %>%
+layer_flatten() %>%  
+layer_dense(64) %>%  
+layer_activation("sigmoid") %>%  
+layer_dropout(0.5) %>%  
+layer_dense(10) %>%  
+layer_activation("softmax")
+
+cnn_xtrain = array(x_train, dim = c(dim(x_train)[1], dim(x_train)[2], dim(x_train)[3], 1))
+cnn_xtest = array(x_test, dim = c(dim(x_test)[1], dim(x_test)[2], dim(x_test)[3], 1))
+
+cnn_model %>% compile(
+  optimizer = 'adam', 
+  loss = 'sparse_categorical_crossentropy',
+  metrics = c('accuracy')
+)
+cnn_m = cnn_model %>% fit(cnn_xtrain, y_train, epochs = 30, validation_split = 0.2, batch_size = 32)
+
+plot(cnn_m) + theme_minimal()
+
+cnn_score <- cnn_model %>% evaluate(cnn_xtest, y_test)
+nn_df <- rbind(nn_df, data.frame(model_type = "CNN",
+                    val_accuracy = cnn_m$metrics$val_accuracy[30],
+                    test_accuracy = cnn_score$accuracy))
+```
+
+```{r}
+knitr::kable(nn_df)
+```

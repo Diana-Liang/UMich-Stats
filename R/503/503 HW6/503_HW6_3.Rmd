@@ -1,0 +1,43 @@
+---
+title: "503 HW#6 3"
+author: "Diana Liang"
+date: "4/14/2020"
+output: word_document
+---
+
+```{r}
+# load libraries
+library(ISLR)
+library(graphics)
+
+# look at data
+dim(USArrests)
+```
+
+```{r}
+before <- hclust(dist(USArrests))
+plot(before, main="Complete Linkage w/o Scaling", xlab="", sub="", ylab="")
+no_scale = cutree(before, k=3)
+rect.hclust(before, k=3, cluster=no_scale, border='red')
+
+before_scale <- data.frame(States = labels(no_scale),
+                           Group_before = no_scale)
+```
+
+```{r}
+after <- hclust(dist(scale(USArrests)))
+plot(after, main="Complete Linkage w/ Scaling", xlab="", sub="", ylab="")
+with_scale <- cutree(after, 3)
+rect.hclust(before, k=3, cluster=with_scale, border='red')
+after_scale <- data.frame(States = labels(with_scale),
+                           Group_after = with_scale)
+
+```
+
+```{r}
+all <- merge(before_scale, after_scale, by="States")
+knitr::kable(t(all))
+```
+
+
+

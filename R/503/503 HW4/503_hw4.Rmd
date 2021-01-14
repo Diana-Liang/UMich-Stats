@@ -1,0 +1,188 @@
+---
+title: '503 HW #4'
+author: "Diana Liang"
+date: "3/12/2020"
+output: word_document
+---
+
+
+#Part 1: Prove Minimizer
+
+
+#Part 2: Bank Marketing Dataset
+
+```{r}
+train <- readr::read_csv('bank_marketing_train.csv')
+test <- readr::read_csv('bank_marketing_test.csv')
+```
+
+##A: Optimal Tree
+
+```{r}
+library(rpart)
+library(rpart.plot)  
+library(rattle)
+
+tree_train = rpart(deposit ~ ., train, parms = list(split = "gini"), method = "class")
+plotcp(tree_train)
+```
+
+The best cp is 0.016 or lower, so a cp of 0.016 was chosen as the parameter for the optimal tree.
+
+```{r}
+tree_opt = rpart(deposit ~ ., train, parms = list(split = "gini"), method = "class", cp = 0.016)
+
+pred_test = predict(tree_opt, test, type="class")
+sum(pred_test != test$deposit)/dim(test)[1]
+```
+
+The test error for the optimal tree is shown above.
+
+##B: Subtree of Optimal
+
+A larger cp of 0.02 was chosen to create a subtree with fewer terminal nodes.
+
+```{r}
+tree_sub = rpart(deposit ~ ., train, parms = list(split = "gini"), method = "class", cp = 0.02)
+fancyRpartPlot(tree_sub)
+```
+
+The variables used in the subtree are: duration, contact, month, housing, and poutcome.
+
+##C: Random Forest
+
+### Original
+
+```{r}
+library(randomForest)
+
+train$deposit = factor(train$deposit)
+train$job = factor(train$job)
+train$marital = factor(train$marital)
+train$education = factor(train$education)
+train$default = factor(train$default)
+train$housing = factor(train$housing)
+train$loan = factor(train$loan)
+train$contact = factor(train$contact)
+train$month = factor(train$month)
+train$poutcome = factor(train$poutcome)
+
+test$deposit = factor(test$deposit)
+test$job = factor(test$job)
+test$marital = factor(test$marital)
+test$education = factor(test$education)
+test$default = factor(test$default)
+test$housing = factor(test$housing)
+test$loan = factor(test$loan)
+test$contact = factor(test$contact)
+test$month = factor(test$month)
+test$poutcome = factor(test$poutcome)
+
+rf_og = randomForest(deposit ~ ., data = train, mtry = ncol(train)-1, importance = TRUE, ntree = 500)
+
+importance(rf_og)
+```
+
+The most important variables are:
+
+```{r}
+pred_test = predict(rf_og, test, type="class")
+sum(pred_test != test$deposit)/dim(test)[1]
+```
+
+The test error for the original random forest is shown above.
+
+### Smaller mtry
+
+```{r}
+rf_mtry = randomForest(deposit ~ ., data = train, mtry = 2, importance = TRUE, ntree = 500)
+
+pred_test = predict(rf_mtry, test, type="class")
+sum(pred_test != test$deposit)/dim(test)[1]
+```
+
+A smaller mtry
+
+### Larger nodesize
+
+```{r}
+rf_ndsz = randomForest(deposit ~ ., data = train, mtry = ncol(train)-1, nodesize = 1000, importance = TRUE, ntree = 500)
+
+pred_test = predict(rf_ndsz, test, type="class")
+sum(pred_test != test$deposit)/dim(test)[1]
+```
+
+A larger nodesize
+
+
+### Smaller ntrees
+
+```{r}
+rf_nt = randomForest(deposit ~ ., data = train, mtry = ncol(train)-1, importance = TRUE, ntree = 20)
+
+pred_test = predict(rf_nt, test, type="class")
+sum(pred_test != test$deposit)/dim(test)[1]
+```
+
+Smaller ntrees
+
+##D: Boosting
+
+###: Original
+
+```{r}
+library(gbm)
+
+train$deposit = ifelse(train$deposit=="yes",1,0)
+test$deposit = ifelse(test$deposit=="yes",1,0)
+
+ada_og = gbm(deposit~., data = train, distribution = "adaboost", n.trees = 5000, interaction.depth = 3)
+
+summary(ada_og)
+```
+
+The most important variables are:
+
+```{r}
+pred_test = predict(ada_og, newdata = test, n.trees = 5000, type = "response")
+pred_test = ifelse(pred_test>0.5,1,0)
+sum(pred_test != test$deposit)/dim(test)[1]
+```
+
+The test error is shown above.
+
+### Greater interaction.depth
+
+```{r}
+ada_int = gbm(deposit~., data = train, distribution = "adaboost", n.trees = 5000, interaction.depth = 5)
+
+pred_test = predict(ada_int, newdata = test, n.trees = 5000, type = "response")
+pred_test = ifelse(pred_test>0.5,1,0)
+sum(pred_test != test$deposit)/dim(test)[1]
+```
+
+Greater interaction.depth
+
+### Larger shrinkage
+
+```{r}
+ada_sh = gbm(deposit~., data = train, distribution = "adaboost", n.trees = 5000, interaction.depth = 3, shrinkage = 0.5)
+
+pred_test = predict(ada_sh, newdata = test, n.trees = 5000, type = "response")
+pred_test = ifelse(pred_test>0.5,1,0)
+sum(pred_test != test$deposit)/dim(test)[1]
+```
+
+Larger shrinkage
+
+### Smaller n.trees
+
+```{r}
+ada_nt = gbm(deposit~., data = train, distribution = "adaboost", n.trees = 20, interaction.depth = 3)
+
+pred_test = predict(ada_nt, newdata = test, n.trees = 20, type = "response")
+pred_test = ifelse(pred_test>0.5,1,0)
+sum(pred_test != test$deposit)/dim(test)[1]
+```
+
+Smaller n.trees

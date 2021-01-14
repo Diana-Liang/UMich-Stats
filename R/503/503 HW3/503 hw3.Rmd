@@ -1,0 +1,78 @@
+---
+title: '503 HW #3'
+author: "Diana Liang"
+date: "2/27/2020"
+output: word_document
+---
+
+```{r, include = FALSE}
+library(mgcv)
+oz_df = readr::read_table2("ozone_data.txt")
+```
+# Problem 1: g1 versus g2
+## a. $\lambda$ going towards infinity, training error
+
+g2 would have the smaller training error. Both curves would be fully defined by minimizing the third or fourth derivative, and the fourth derivative would allow for the most overfitting to the training data.
+
+## b. $\lambda$ going towards infinity, test error
+
+g1 would have the smaller test error since it would not overfit to the training data as much.
+
+## c. $\lambda$ going towards zero
+
+Both g1 and g2 would mainly be defined by the same first term, so they would have similar training and test errors.
+
+# Problem 2: Ozone Data
+
+```{r}
+# Set up training and test data
+train_idx = sample(nrow(oz_df), floor(nrow(oz_df)*0.7), replace = FALSE)
+train_oz = oz_df[train_idx, ]
+test_oz = oz_df[-train_idx, ]
+```
+
+## a. Linear Model
+
+```{r}
+oz_lm = lm((ozone)^(1/3)~., data = train_oz)
+summary(oz_lm)
+```
+```{r}
+lm_train_err = mean(((train_oz$ozone^(1/3)) - predict(oz_lm, train_oz[, -1]))^2)
+lm_train_err
+```
+
+The linear model shows that all 3 variables are important in predicting ozone although the $R^2$ value of 0.66 suggests that a linear model may not be the best fit for this data. The MSE shown above will be used as a measure of how well this model fits the training data to compare with other models.
+
+## b. Smoothing GAM Model
+
+```{r}
+oz_gam = gam((ozone^(1/3))~s(temperature)+s(wind)+s(radiation),
+              data = train_oz, method = "GCV.Cp")
+summary(oz_gam)
+par(mfrow = c(1,3))
+plot(oz_gam)
+```
+```{r}
+gam_train_err = mean(((train_oz$ozone^(1/3)) - predict(oz_gam, train_oz[, -1]))^2)
+gam_train_err
+```
+
+The CV chose degrees of freedom for each predictor variable based on the smoothing parameter that minimizes the training error. The parameters chosen for each is shown in the plots above. The lowest training error for this GAM model also shown above is much smaller than that of the linear model. Since the GAM model does not force the relationship between the response and predictor variables to be linear, the model can fit more closely to the training data. So a lower training error for the GAM model compared to that of the linear model is expected.
+
+## c. Test Error
+
+```{r}
+lm_test_err = mean(((test_oz$ozone^(1/3)) - predict(oz_lm, test_oz[, -1]))^2)
+lm_test_err
+```
+```{r}
+gam_test_err = mean(((test_oz$ozone^(1/3)) - predict(oz_gam, test_oz[, -1]))^2)
+gam_test_err
+```
+
+The linear model test error is lower than the GAM model test error, which suggests that the linear model is better at predicting ozone than the GAM model is. This may be because the GAM model is overfitting the training data, so it does not predict new data as well.
+
+## d. Non-linear Relationships
+
+Since the linear model has a lower test error, this suggests that assuming all the predictor variables have a linear relationship with the response variable led to a better model than that from allowing for non-linear relationships. From this, there is no evidence that any of the variables have a non-linear relationship with the cube root of ozone.

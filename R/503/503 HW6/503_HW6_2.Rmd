@@ -1,0 +1,31 @@
+---
+title: "503 HW6 2"
+author: "Diana Liang"
+date: "4/14/2020"
+output: word_document
+---
+
+```{r}
+# load data
+data <- readr::read_csv('HW6_2_data.csv')
+data <- data[1:10, ]
+```
+
+```{r}
+# Prepare for MDS
+numerical <- as.matrix(data[,2:11])
+
+# MDS and plot
+mds <- cmdscale(numerical, k=2)
+new_mds <- mds*-1
+plot(new_mds[,1:2], 
+     xlab="First Dimension", ylab="Second Dimension",
+     main="Cities by Location",
+     xlim=c(-2000, 2000), ylim=c(-650, 650),
+     type="n",cex.lab=1, cex.axis=1, cex=1)
+text(new_mds[,1:2], as.character(data$Cities), cex=0.75)
+
+```
+
+
+

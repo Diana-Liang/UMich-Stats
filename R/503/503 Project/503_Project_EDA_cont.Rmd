@@ -1,0 +1,47 @@
+---
+title: "503 Project EDA cont"
+author: "Diana Liang"
+date: "3/13/2020"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+# Load libraries
+library(GGally)
+# Load dataset
+train <- readr::read_csv("spotify_train.csv")
+test <- readr::read_csv("spotify_test.csv")
+```
+
+```{r}
+train$genre <- factor(train$genre)
+test$genre <- factor(test$genre)
+train$popularity <- scale(train$popularity)
+train$acousticness <- scale(train$acousticness)
+train$danceability <- scale(train$danceability)
+train$duration_ms <- scale(train$duration_ms)
+train$energy <- scale(train$energy)
+train$instrumentalness <- scale(train$instrumentalness)
+train$key <- factor(train$key)
+test$key <- factor(test$key)
+train$liveness <- scale(train$liveness)
+train$loudness <- scale(train$loudness)
+train$mode <- factor(train$mode)
+test$mode <- factor(test$mode)
+train$speechiness <- scale(train$speechiness)
+train$tempo <- scale(train$tempo)
+train$time_signature <- factor(train$time_signature)
+test$time_signature <- factor(test$time_signature)
+train$valence <- scale(train$valence)
+```
+
+```{r}
+pairs = ggpairs(train,axisLabels = "none",
+        upper = list(continuous = "points", combo = "dot"),
+        lower = list(continuous = "cor", combo = "dot"),
+        diag = list(continuous = "densityDiag")) + 
+  theme_bw()
+pairs
+```

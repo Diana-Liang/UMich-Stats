@@ -1,0 +1,57 @@
+---
+title: "503 Project EDA"
+author: "Diana Liang"
+date: "3/13/2020"
+output: word_document
+---
+
+```{r}
+# Load dataset
+df <- readr::read_csv("SpotifyFeatures.csv")
+```
+
+```{r}
+# Load libraries
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(GGally)
+```
+
+```{r}
+# Get rid of tracks with multiple and unpopular genres
+temp <- df %>%
+  group_by(track_id) %>%
+  mutate(n = n()) %>%
+  ungroup() %>%
+  filter(n == 1) %>%
+  ungroup() %>% group_by(genre) %>%
+  mutate(count = n()) %>%
+  filter(count > 6000)
+
+# Get rid of not useful columns
+temp <- temp[, -c(2, 3, 4, 19, 20)]
+
+```
+
+```{r}
+# Check how many genres
+temp_count <- temp %>%
+  group_by(genre) %>%
+  summarize(n = n())
+
+# Check how many NA's
+n_na <- sum(!complete.cases(temp))
+```
+
+```{r}
+train_idx <- sample(nrow(temp), floor(nrow(temp)*0.7))
+train <- temp[train_idx,]
+test <- temp[-train_idx,]
+
+write.csv(train, 'spotify_train.csv')
+write.csv(test, 'spotify_test.csv')
+```
+
+
+
