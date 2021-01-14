@@ -1,0 +1,74 @@
+---
+title: "504 HW#1"
+author: "Diana Liang"
+date: "9/20/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Load libraries
+library(tidyr)
+library(dplyr)
+library(splines)
+library(drgee)
+
+# Load data
+setwd("~/2020/Stats 504")
+df <- readr::read_csv("testing_mortality_world.csv")
+df <- df %>%
+  filter(deaths>=0, cases>=0) %>%
+  mutate(logpop = log(popData2019))
+
+df2 <- df %>%
+  filter(popData2019 >= 2e6)
+
+df$country <- as.factor(df$country)
+df2$country <- as.factor(df2$country)
+```
+
+```{r}
+model_1 <- glm(deaths ~ C(country) + bs(rdays, 5)
+               + logcumpos0 + logcumpos1 + logcumpos2 +logcumpos3,
+               data=df2, family=quasipoisson)
+summary(model_1)
+```
+
+```{r}
+model_2 <- glm(deaths ~ bs(rdays, 5)
+               + logcumpos0 + logcumpos1 + logcumpos2 +logcumpos3,
+               data=df, family=quasipoisson)
+summary(model_2)
+
+```
+
+```{r}
+model_3 <- glm(deaths ~ C(country) + bs(rdays, 5)
+               + logcumpos0 + logcumpos1 + logcumpos2 + logcumpos3,
+               data=df, family=poisson)
+#summary(model_3)
+logLik(model_3)
+```
+```{r}
+model_3 <- glm(deaths ~ C(country) + bs(days, 5)
+               + logcumpos0 + logcumpos1 + logcumpos2 +logcumpos3,
+               data=df, family=quasipoisson)
+summary(model_3)
+```
+
+```{r}
+model_4 <- glm(deaths ~ C(country) + bs(rdays, 5)
+               + logcumpos0 + logcumpos1 + logcumpos2 +logcumpos3,
+               data=df, family=quasipoisson)
+summary(model_4)
+```
+
+```{r}
+model_5 <- gee(deaths ~ C(country) + bs(rdays, 5)
+               + logcumpos0 + logcumpos1 + logcumpos2 + logcumpos3,
+               data=df, link="log")
+summary(model_5)
+```

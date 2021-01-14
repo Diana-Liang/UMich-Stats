@@ -1,0 +1,69 @@
+---
+title: "504 hw 4"
+author: "Diana Liang"
+date: "11/14/2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("~/2020/Stats 504/student")
+library(dplyr)
+library(tidyr)
+library(gbm)
+```
+
+```{r cars, echo=FALSE}
+data <- read.csv("student-mat.csv", sep=";")
+data <- data %>%
+  select(-G1, -G2) %>%
+  filter(G3 > 0)
+data$absent <- ifelse(data$absences >= 3, "Treatment", "Control")
+data$absent <- as.factor(data$absent)
+data$macol<-ifelse(data$Medu == 4, 1, 0)
+data$macol <- as.factor(data$macol)
+data$pacol<-ifelse(data$Fedu == 4, 1, 0)
+data$pacol <- as.factor(data$pacol)
+data$close <- ifelse(data$traveltime <= 1 , 1, 0)
+data$close <- as.factor(data$close)
+data$studytime <-ifelse(data$studytime <= 2 , 1, 0)
+data$studytime <- as.factor(data$studytime)
+
+data <- data %>%
+  select(school, sex, age, address, famsize, Pstatus, schoolsup,
+         famsup, activities, nursery, higher, internet, romantic,
+         famrel, freetime, goout, Dalc, Walc, health, macol, pacol,
+         close, G3, absent)
+
+## Creating baseline table-------------------------------------------------
+baseline <- matrix(NA, ncol=4, nrow=23)
+for(i in 1:(ncol(data)-1)){
+  if(is.factor(data[,i]) == TRUE){
+    temp <- table(data[,i], data$absent)
+    temp <- rbind(temp, temp[1,]+temp[2,])
+    temp <- cbind(temp[,1]+temp[,2], temp)
+    temp <- as.vector(temp[1,]*100/temp[3,])
+    temp <- paste0(sprintf("%0.1f", temp), "%")
+    p_val <- chisq.test(data[,i], data$absent)$p.value
+    temp <- c(temp, sprintf("%0.3f", p_val))
+  } 
+  else{
+    temp_c <- data[,i][data$absent=="Control"]
+    temp_t <- data[,i][data$absent=="Treatment"]
+    temp_mean <- c(mean(data[,i]), mean(temp_c),
+                   mean(temp_t))
+    temp_sd <- c(sd(data[,i]), sd(temp_c),
+                  sd(temp_t))
+    temp <- sprintf("%0.1f(%0.2f)", temp_mean, temp_sd)
+    p_val <- chisq.test(data[,i], data$absent)$p.value
+    temp <- c(temp, sprintf("%0.3f", p_val))
+  }
+  baseline[i,] <- temp
+}
+baseline <- data.frame("Variable" = colnames(data)[1:23],
+                       "Total (357)" = baseline[,1],
+                       "Control (145)" = baseline[,2],
+                       "Treatment (212)" = baseline[,3],
+                       "p-value" = baseline[,4])
+knitr::kable(baseline, caption="Baseline Characteristics")
+```

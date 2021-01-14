@@ -1,0 +1,89 @@
+---
+title: 'Stats 504 HW #2'
+author: "Diana Liang"
+date: "10/12/2020"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(survival)
+library(ggplot2)
+```
+```{r data}
+data <- read.csv("https://raw.githubusercontent.com/propublica/compas-analysis/master/cox-violent-parsed.csv")
+data <- as.data.frame(data)
+
+dat <- data %>%
+  group_by(id) %>%
+  filter(row_number()==1)%>%
+  ungroup() %>%
+  mutate(time_risk = end-start) %>%
+  filter(time_risk > 0) %>%
+  filter(v_decile_score >= 1) %>%
+  select(id, sex, is_violent_recid,
+         v_decile_score, v_score_text, time_risk)
+dat <- dat[complete.cases(dat),]
+
+```
+```{r survival}
+surv_obj <- with(dat, Surv(time_risk, is_violent_recid))
+
+score_model <- coxph(surv_obj~v_decile_score*sex, data=dat)
+
+cat_model <- coxph(surv_obj~v_score_text*sex, data=dat)
+```
+```{r tables}
+score_table <- data.frame(risk_coef = summary(score_model)$coef[,2],
+                          lower_95 = exp(confint(score_model))[,1],
+                          upper_95 = exp(confint(score_model))[,2],
+                          p_value = summary(score_model)$coef[,5]) %>%
+  transmute(variables = row.names(summary(score_model)$coef),
+            risk_coef = sprintf("%0.3f (%0.3f, %0.3f)", risk_coef, lower_95, upper_95),
+            p_value = sprintf("%0.3f", p_value))
+knitr::kable(score_table,
+             col.names=c("Variables", "Prop. Risk", "P-value"), 
+             caption="Proportional Risk of Recidivism compared to Female with 95% Conf. Int (Using Decile Score)")
+
+cat_table <- data.frame(risk_coef = summary(cat_model)$coef[,2],
+                          lower_95 = exp(confint(cat_model))[,1],
+                          upper_95 = exp(confint(cat_model))[,2],
+                          p_value = summary(cat_model)$coef[,5]) %>%
+  transmute(variables = row.names(summary(cat_model)$coef),
+            risk_coef = sprintf("%0.3f (%0.3f, %0.3f)", risk_coef, lower_95, upper_95),
+            p_value = sprintf("%0.3f", p_value))
+knitr::kable(cat_table,
+             col.names=c("Variables", "Prop. Risk", "P-value"), 
+             caption="Proportional Risk of Recidivism compared to High Scored Female with 95% Conf. Int. (Using Decile Score Category)")
+```
+```{r plots}
+score_new_values <- data.frame(v_decile_score = rep(c(1:10), 2),
+                         sex = rep(c("Male", "Female"), each=10))
+score_new_values$sex <- as.factor(score_new_values$sex)
+score_new_values$pred <- predict(score_model, newdata=score_new_values)
+ggplot(data=score_new_values, aes(x=v_decile_score, y=exp(pred), group=sex)) +
+  labs(title = "Effect of Violent Decile Score on Recidivism Risk by Sex",
+       x = "Violent Decile Score",
+       y = "Predicted Proportional Risk of Recidivism") +
+  geom_line(aes(color=sex)) +
+  geom_point(aes(color=sex)) + theme(plot.title = element_text(size=11))
+
+cat_new_values <- data.frame(v_score_text = rep(c("Low", "Medium", "High", "N/A"), 2),
+                         sex = rep(c("Male", "Female"), each=4))
+cat_new_values$v_score_text <- as.factor(cat_new_values$v_score_text)
+cat_new_values$sex <- as.factor(cat_new_values$sex)
+cat_new_values$pred <- predict(cat_model, newdata=cat_new_values)
+ggplot(data=cat_new_values, aes(x=v_score_text, y=exp(pred), group=sex)) +
+  labs(title = "Effect of Violent Decile Category on Recidivism Risk by Sex",
+       y = "Predicted Proportional Risk of Recidivism") +
+  geom_point(aes(color=sex)) +
+  geom_line(aes(color=sex)) +
+  scale_x_discrete(name ="Violent Decile Category", 
+                    limits = c("Low","Medium","High", "N/A")) +
+  theme(plot.title = element_text(size=11))
+
+```
