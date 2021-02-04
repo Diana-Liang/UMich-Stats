@@ -1,0 +1,180 @@
+---
+title: "503_Project"
+author: "Diana Liang"
+date: "2/4/2021"
+output: pdf_document
+---
+
+
+```{r}
+# Load libraries
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(GGally)
+library(randomForest)
+library(maboost)
+
+```
+
+```{r}
+# Load dataset
+df <- readr::read_csv("SpotifyFeatures.csv")
+```
+
+```{r}
+# Get rid of tracks with multiple and unpopular genres
+temp <- df %>%
+  group_by(track_id) %>%
+  mutate(n = n()) %>%
+  ungroup() %>%
+  filter(n == 1) %>%
+  ungroup() %>% group_by(genre) %>%
+  mutate(count = n()) %>%
+  filter(count > 6000)
+
+# Get rid of not useful columns
+temp <- temp[, -c(2, 3, 4, 19, 20)]
+
+```
+
+```{r}
+# Check how many genres
+temp_count <- temp %>%
+  group_by(genre) %>%
+  summarize(n = n())
+
+# Check how many NA's
+n_na <- sum(!complete.cases(temp))
+```
+
+```{r}
+train_idx <- sample(nrow(temp), floor(nrow(temp)*0.7))
+train <- temp[train_idx,]
+test <- temp[-train_idx,]
+
+write.csv(train, 'spotify_train.csv')
+write.csv(test, 'spotify_test.csv')
+```
+```{r}
+# Load dataset
+train <- readr::read_csv("spotify_train.csv")
+test <- readr::read_csv("spotify_test.csv")
+```
+
+```{r}
+train$genre <- factor(train$genre)
+test$genre <- factor(test$genre)
+train$popularity <- scale(train$popularity)
+train$acousticness <- scale(train$acousticness)
+train$danceability <- scale(train$danceability)
+train$duration_ms <- scale(train$duration_ms)
+train$energy <- scale(train$energy)
+train$instrumentalness <- scale(train$instrumentalness)
+train$key <- factor(train$key)
+test$key <- factor(test$key)
+train$liveness <- scale(train$liveness)
+train$loudness <- scale(train$loudness)
+train$mode <- factor(train$mode)
+test$mode <- factor(test$mode)
+train$speechiness <- scale(train$speechiness)
+train$tempo <- scale(train$tempo)
+train$time_signature <- factor(train$time_signature)
+test$time_signature <- factor(test$time_signature)
+train$valence <- scale(train$valence)
+```
+
+```{r}
+pairs = ggpairs(train,axisLabels = "none",
+        upper = list(continuous = "points", combo = "dot"),
+        lower = list(continuous = "cor", combo = "dot"),
+        diag = list(continuous = "densityDiag")) + 
+  theme_bw()
+pairs
+```
+
+```{r}
+## Prepare data
+# Load datasets
+train <- readr::read_csv("spotify_train.csv")
+train <- train[, -c(1)]
+test <- readr::read_csv("spotify_test.csv")
+test <- test[, -c(1)]
+
+# Transform data type into factor
+train$genre <- factor(train$genre)
+test$genre <- factor(test$genre)
+train$key <- factor(train$key)
+test$key <- factor(test$key)
+train$mode <- factor(train$mode)
+test$mode <- factor(test$mode)
+train$time_signature <- factor(train$time_signature)
+test$time_signature <- factor(test$time_signature)
+
+```
+
+```{r}
+## Skipped this but could be done
+#train$popularity <- scale(train$popularity)
+#train$acousticness <- scale(train$acousticness)
+#train$danceability <- scale(train$danceability)
+#train$duration_ms <- scale(train$duration_ms)
+#train$energy <- scale(train$energy)
+#train$instrumentalness <- scale(train$instrumentalness)
+#train$liveness <- scale(train$liveness)
+#train$loudness <- scale(train$loudness)
+#train$speechiness <- scale(train$speechiness)
+#train$tempo <- scale(train$tempo)
+#train$valence <- scale(train$valence)
+
+```
+
+```{r}
+## Random Forest Model
+
+# Find best parameters by lowest OOB error
+#oob = c()
+#for(tree in c(100, 500, 1000, 5000)){
+#  for(i in 2:7){
+#    rf = randomForest(genre~., data=train, mtry=i, importance=TRUE, ntree=tree)
+#    final_oob = rf$err.rate[nrow(rf$err.rate),1]
+#    oob = cbind(oob, final_oob)
+#  }
+#}
+#which.min(oob)
+
+# Fit model based on best parameters
+rf = randomForest(genre~., data = train, mtry = 3,
+                  importance = TRUE, ntree = 1000)
+
+# Find important variables and test error
+varImpPlot(rf)
+pred_test = predict(rf, test, type="class")
+sum(pred_test != test$genre)/dim(test)[1]
+```
+
+```{r}
+## Adaboost Model
+
+# Find best parameters based on validation training error
+#train_err = c()
+#for(shrink in c(0.05, 0.1, 0.5)){
+#  for(i in c(1000, 2000, 3000)){
+#    valid = sample(nrow(train), floor(nrow(train)*.3))
+#    boost <- maboost(genre~., data = train[-valid,], breg = 'entrop', iter = i, nu = shrink, bag.frac = 1)
+#    pred = predict(boost, train[valid,], type="class")
+#    err = sum(pred != train[valid,]$genre)/dim(train[valid,])[1]
+#    train_err = cbind(train_err, err)
+#  }
+#}
+#which.min(train_err)
+
+# Fit model based on best parameters
+boost <- maboost(genre~., data = train, breg = 'entrop', iter = 3000, nu = 0.5, bag.frac = 1)
+
+# Find important variables and test error
+varplot.maboost(boost)
+pred_test_bt = predict(boost, test, type="class")
+sum(pred_test_bt != test$genre)/dim(test)[1]
+```
+
