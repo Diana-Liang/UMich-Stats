@@ -1,6 +1,6 @@
 # Projects
 
-## Blood Pressure by Gender by LASSO
+## Blood Pressure by Gender
 - Data Preparation and Analysis of Whether Factors of Blood Pressure Differ between Genders Using LASSO in Stata
 - Files: Blood_Pressure_Gender
 
