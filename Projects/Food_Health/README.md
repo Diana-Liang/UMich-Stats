@@ -24,7 +24,7 @@ In the end, we interpreted all these models to mean that there was too much vari
 - Set up training and validation data sets to figure out best parameters
 - (Write MLP model and) Run specified model
 
-## 4. Visualization
+## 4. Visualization with matplotlib and seaborn
 - Figure out parameters that gave best predictive accuracy
 - Calculate accuracy
 - Show heatmap of predicted vs. actual health
